@@ -1,0 +1,36 @@
+# ES Prepočet – nasadenie na Render (Blueprint). Render → New → Blueprint → vyberte tento repozitár.
+# Pri vytvorení Render vypýta hodnoty premenných so sync: false (API kľúč, prvý administrátor).
+databases:
+  - name: es-prepocet-db
+    plan: basic-256mb
+    region: frankfurt
+    databaseName: es_prepocet
+    user: es_prepocet
+
+services:
+  - type: web
+    name: es-prepocet
+    runtime: node
+    region: frankfurt
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: es-prepocet-db
+          property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: AI_MODEL
+        value: claude-sonnet-5-5
+      - key: AI_MODEL_QUICK
+        value: claude-haiku-5-5
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

@@ -1,0 +1,37 @@
+{
+  "name": "es-prepocet",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ES Prepočet – odborný cenový odhad domov Ekonomické stavby",
+  "main": "server/index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "build": "node scripts/build.js",
+    "test": "node --test test/server.test.js && vitest run --root engine && node test/e2e.cjs",
+    "build:artifact": "node scripts/build.js --artifact",
+    "dev": "DATABASE_URL=memory AI_MOCK=1 ADMIN_EMAIL=admin@test.sk ADMIN_PASSWORD=heslo12345 node server/index.js",
+    "test:server": "node --test test/server.test.js",
+    "test:engine": "vitest run --root engine",
+    "test:e2e": "node test/e2e.cjs"
+  },
+  "dependencies": {
+    "bcryptjs": "2.4.3",
+    "express": "4.21.2",
+    "pg": "8.13.1"
+  },
+  "devDependencies": {
+    "pg-mem": "3.0.4",
+    "esbuild": "0.23.1",
+    "vitest": "2.0.5",
+    "typescript": "5.5.4",
+    "playwright-core": "1.47.2",
+    "htm": "3.1.1",
+    "pdfjs-dist": "3.11.174",
+    "pdfmake": "0.2.10",
+    "xlsx": "0.18.5"
+  }
+}
