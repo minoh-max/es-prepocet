@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const { callAi, AiError, LIMITS } = require("./ai");
+const jobs = require("./jobs");
 
 const SESSION_DAYS = 30;
 const COOKIE = "es_session";
@@ -32,10 +33,19 @@ function canWrite(user, docPath) {
   return docPath === "profiles/" + user.id || docPath.startsWith("estimates/" + user.id + "/");
 }
 
+/**
+ * opts: secureCookies, publicDir, serveStatic (false na Netlify – súbory posiela Netlify sám),
+ *       maxUploadBytes (limit nahrávaného súboru), aiLimits (doplnenie limitov pre prehliadač),
+ *       dispatchJob(job, req) – spustenie AI úlohy (predvolene hneď na tomto serveri).
+ */
 function createApp(pool, opts = {}) {
   const app = express();
   const secure = opts.secureCookies ?? process.env.NODE_ENV === "production";
   const publicDir = opts.publicDir || path.join(__dirname, "..", "public");
+  const maxUpload = opts.maxUploadBytes || 30 * 1024 * 1024;
+  const aiLimits = { ...LIMITS, ...(opts.aiLimits || {}), images: { ...LIMITS.images, ...((opts.aiLimits && opts.aiLimits.images) || {}) } };
+  const dispatchJob = opts.dispatchJob || (async (job) => { setImmediate(() => jobs.runJob(pool, job.id, job.token).catch((e) => console.error("[ai job]", e))); });
+  const clientIp = (req) => String(req.headers["x-nf-client-connection-ip"] || req.ip || "");
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
 
@@ -76,23 +86,26 @@ function createApp(pool, opts = {}) {
   const json = express.json({ limit: "40mb" });
 
   // ---- prihlásenie ----
-  const fails = new Map(); // e-mail/IP → { n, until }
+  // neúspešné pokusy sú v databáze, aby zámok platil aj keď beží viac kópií servera (Netlify)
   app.post("/api/auth/login", json, async (req, res, next) => {
     try {
       const email = normEmail(req.body && req.body.email);
       const password = String((req.body && req.body.password) || "");
-      const key = email + "|" + req.ip;
-      const f = fails.get(key);
+      const key = (email + "|" + clientIp(req)).slice(0, 300);
+      const fr = await pool.query("SELECT n, until_at FROM login_fails WHERE key = $1", [key]);
+      const f = fr.rows[0] ? { n: Number(fr.rows[0].n), until: Number(fr.rows[0].until_at) } : null;
       if (f && f.n >= 5 && f.until > now()) return res.status(429).json({ error: "Priveľa neúspešných pokusov. Skúste to znova o 15 minút.", code: "locked" });
       const r = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
       const u = r.rows[0];
       const ok = u && u.active && (await bcrypt.compare(password, u.pass_hash));
       if (!ok) {
         const n = (f && f.until > now() ? f.n : 0) + 1;
-        fails.set(key, { n, until: now() + 15 * 60e3 });
+        if (f) await pool.query("UPDATE login_fails SET n = $1, until_at = $2 WHERE key = $3", [n, now() + 15 * 60e3, key]);
+        else await pool.query("INSERT INTO login_fails (key, n, until_at) VALUES ($1, $2, $3)", [key, n, now() + 15 * 60e3]);
+        await pool.query("DELETE FROM login_fails WHERE until_at < $1", [now()]);
         return res.status(401).json({ error: "Nesprávny e-mail alebo heslo.", code: "bad_credentials" });
       }
-      fails.delete(key);
+      if (f) await pool.query("DELETE FROM login_fails WHERE key = $1", [key]);
       const token = crypto.randomBytes(32).toString("base64url");
       await pool.query("INSERT INTO sessions (token, user_id, expires_at) VALUES ($1, $2, $3)", [token, u.id, now() + SESSION_DAYS * 864e5]);
       await pool.query("DELETE FROM sessions WHERE expires_at < $1", [now()]);
@@ -217,7 +230,11 @@ function createApp(pool, opts = {}) {
   app.delete("/api/doc", auth(), (req, res, next) => writeDoc(req, res, "delete").catch(next));
 
   // ---- súbory (logo, podklady prepočtu, importovaný číselník) ----
-  app.post("/api/assets", auth(), express.raw({ type: () => true, limit: "30mb" }), async (req, res, next) => {
+  app.post("/api/assets", auth(), (req, res, next) => {
+    const len = Number(req.headers["content-length"] || 0);
+    if (len > maxUpload) return res.status(413).json({ error: `Súbor je väčší ako ${String(Math.floor(maxUpload / 1048576 * 10) / 10).replace(".", ",")} MB, nedá sa uložiť.`, code: "too_large" });
+    next();
+  }, express.raw({ type: () => true, limit: maxUpload }), async (req, res, next) => {
     try {
       const buf = req.body;
       if (!Buffer.isBuffer(buf) || !buf.length) return res.status(400).json({ error: "Súbor je prázdny.", code: "empty" });
@@ -242,14 +259,37 @@ function createApp(pool, opts = {}) {
   });
 
   // ---- AI: čítanie štúdií a zhrnutie ----
-  app.get("/api/ai/limits", auth(), (req, res) => res.json({ ...LIMITS, configured: !!process.env.ANTHROPIC_API_KEY || process.env.AI_MOCK === "1" }));
+  app.get("/api/ai/limits", auth(), (req, res) => res.json({ ...aiLimits, jobs: true, configured: !!process.env.ANTHROPIC_API_KEY || process.env.AI_MOCK === "1" }));
+  function aiRequest(b) {
+    if (typeof b.prompt !== "string" || !b.prompt) throw new AiError("Chýba zadanie pre AI.", "bad_request", 400);
+    if (Buffer.byteLength(b.prompt) > LIMITS.maxPromptBytes) throw new AiError("Zadanie pre AI je príliš dlhé.", "too_large", 413);
+    const images = Array.isArray(b.images) ? b.images.filter((x) => x && typeof x.data === "string").map((x) => ({ data: x.data, mediaType: String(x.mediaType || "image/jpeg") })) : [];
+    if (images.length > LIMITS.images.maxCount) throw new AiError("Priveľa obrázkov v jednej požiadavke.", "too_many_images", 400);
+    return { prompt: b.prompt, images, json: !!b.json, tier: b.tier === "quick" ? "quick" : "complex" };
+  }
+  // úloha: založ → spracuje sa na pozadí → prehliadač sa pýta na výsledok
+  app.post("/api/ai/jobs", json, auth(), async (req, res, next) => {
+    try {
+      if (!process.env.ANTHROPIC_API_KEY && process.env.AI_MOCK !== "1") throw new AiError("Čítanie štúdií nie je nastavené – chýba kľúč ANTHROPIC_API_KEY na serveri.", "not_configured", 503);
+      const job = await jobs.createJob(pool, req.user.id, aiRequest(req.body || {}));
+      await dispatchJob(job, req);
+      res.status(202).json({ id: job.id, status: "queued" });
+    } catch (e) {
+      if (e instanceof AiError) return res.status(e.status || 400).json({ error: e.message, code: e.code });
+      next(e);
+    }
+  });
+  app.get("/api/ai/jobs/:id", auth(), async (req, res, next) => {
+    try {
+      const j = await jobs.getJob(pool, String(req.params.id), req.user.id);
+      if (!j) return res.status(404).json({ error: "Úloha neexistuje.", code: "not_found" });
+      res.json(j);
+    } catch (e) { next(e); }
+  });
   app.post("/api/ai", json, auth(), async (req, res) => {
     const b = req.body || {};
     try {
-      if (typeof b.prompt !== "string" || !b.prompt) return res.status(400).json({ error: "Chýba zadanie pre AI.", code: "bad_request" });
-      if (Buffer.byteLength(b.prompt) > LIMITS.maxPromptBytes) return res.status(413).json({ error: "Zadanie pre AI je príliš dlhé.", code: "too_large" });
-      const images = Array.isArray(b.images) ? b.images.filter((x) => x && typeof x.data === "string") : [];
-      const out = await callAi({ prompt: b.prompt, images, json: !!b.json, tier: b.tier === "quick" ? "quick" : "complex" });
+      const out = await callAi(aiRequest(b));
       pool.query("INSERT INTO ai_usage (user_id, at, model, input_tokens, output_tokens) VALUES ($1,$2,$3,$4,$5)", [req.user.id, now(), out.usage.model, out.usage.input_tokens, out.usage.output_tokens]).catch(() => {});
       res.json({ result: out.result });
     } catch (e) {
@@ -262,7 +302,7 @@ function createApp(pool, opts = {}) {
   app.get("/healthz", (req, res) => res.json({ ok: true }));
 
   // ---- statické súbory aplikácie ----
-  app.use(express.static(publicDir, {
+  if (opts.serveStatic !== false) app.use(express.static(publicDir, {
     index: "index.html",
     setHeaders: (res, file) => {
       if (/\.(json|js|css)$/.test(file) && /[\\/]data[\\/]/.test(file)) res.setHeader("Cache-Control", "public, max-age=86400");

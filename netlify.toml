@@ -1,0 +1,57 @@
+# ES Prepočet na Netlify: obrazovky z public/, server ako funkcie v netlify/functions.
+# Premenné (DATABASE_URL, ANTHROPIC_API_KEY, ADMIN_EMAIL, ADMIN_PASSWORD) sa nastavujú v Netlify:
+# Project configuration → Environment variables. Sem nepatria.
+
+[build]
+  command = "npm run build"
+  publish = "public"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  node_bundler = "esbuild"
+  # pg-mem je len na testy, pg-native sa nepoužíva
+  ignored_node_modules = ["pg-mem", "pg-native"]
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/_blob/*"
+  to = "/.netlify/functions/api/_blob/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/healthz"
+  to = "/.netlify/functions/api/healthz"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "same-origin"
+    X-Frame-Options = "SAMEORIGIN"
+    X-Robots-Tag = "noindex"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/data/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"

@@ -21,17 +21,18 @@
   "dependencies": {
     "bcryptjs": "2.4.3",
     "express": "4.21.2",
-    "pg": "8.13.1"
+    "pg": "8.13.1",
+    "serverless-http": "3.2.0"
   },
   "devDependencies": {
-    "pg-mem": "3.0.4",
     "esbuild": "0.23.1",
-    "vitest": "2.0.5",
-    "typescript": "5.5.4",
-    "playwright-core": "1.47.2",
     "htm": "3.1.1",
     "pdfjs-dist": "3.11.174",
     "pdfmake": "0.2.10",
+    "pg-mem": "3.0.4",
+    "playwright-core": "1.47.2",
+    "typescript": "5.5.4",
+    "vitest": "2.0.5",
     "xlsx": "0.18.5"
   }
 }

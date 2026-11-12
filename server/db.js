@@ -42,6 +42,23 @@ const SCHEMA = [
     input_tokens INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0
   )`,
+  `CREATE TABLE IF NOT EXISTS login_fails (
+    key TEXT PRIMARY KEY,
+    n INTEGER NOT NULL,
+    until_at BIGINT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS ai_jobs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token TEXT NOT NULL,
+    status TEXT NOT NULL,
+    request JSONB,
+    result JSONB,
+    error TEXT,
+    code TEXT,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL
+  )`,
 ];
 
 async function createPool(opts = {}) {
@@ -56,9 +73,22 @@ async function createPool(opts = {}) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("Chýba premenná DATABASE_URL (pripojenie k databáze PostgreSQL).");
     const local = /localhost|127\.0\.0\.1/.test(url);
-    pool = new Pool({ connectionString: url, ssl: local || process.env.PGSSLMODE === "disable" ? false : { rejectUnauthorized: false }, max: 10 });
+    // Na Netlify beží každá funkcia zvlášť, preto len pár spojení (Neon ich zdieľa cez „pooled“ adresu).
+    pool = new Pool({
+      connectionString: url,
+      ssl: local || process.env.PGSSLMODE === "disable" ? false : { rejectUnauthorized: false },
+      max: opts.max || 10,
+      idleTimeoutMillis: opts.idleTimeoutMillis || 30000,
+      connectionTimeoutMillis: 15000,
+    });
+    pool.on("error", (e) => console.error("[db]", e.message));
   }
-  for (const sql of SCHEMA) await pool.query(sql);
+  if (opts.memory) for (const sql of SCHEMA) await pool.query(sql);
+  else {
+    // jedna požiadavka = rýchlejší štart funkcie; dve funkcie štartujúce naraz sa môžu zraziť → skús znova
+    try { await pool.query(SCHEMA.join(";\n")); }
+    catch (e) { if (!["23505", "42P07"].includes(e.code)) throw e; await new Promise((r) => setTimeout(r, 300)); await pool.query(SCHEMA.join(";\n")); }
+  }
   return pool;
 }
 

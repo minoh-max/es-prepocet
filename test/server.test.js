@@ -19,12 +19,21 @@ async function call(who, method, url, body, headers = {}) {
 }
 
 test.before(async () => {
-  const pool = await createPool({ memory: true });
+  // TEST_DATABASE_URL=postgres://… → testy proti skutočnému PostgreSQL (tabuľky sa vymažú), inak databáza v pamäti
+  const real = process.env.TEST_DATABASE_URL;
+  if (real) {
+    process.env.DATABASE_URL = real;
+    const { Pool } = require("pg");
+    const p = new Pool({ connectionString: real });
+    await p.query("DROP TABLE IF EXISTS users, sessions, docs, assets, ai_usage, login_fails, ai_jobs");
+    await p.end();
+  }
+  const pool = await createPool({ memory: !real });
   await ensureAdmin(pool, "Admin@Firma.sk", "heslo12345");
   srv = createApp(pool, { secureCookies: false }).listen(0);
   base = "http://localhost:" + srv.address().port;
 });
-test.after(() => srv.close());
+test.after(() => { srv.close(); if (process.env.TEST_DATABASE_URL) setTimeout(() => process.exit(0), 100); });
 
 test("prihlásenie: zlé heslo, správne heslo, me", async () => {
   assert.equal((await call("a", "GET", "/api/auth/me")).status, 401);
@@ -80,6 +89,25 @@ test("AI: JSON odpoveď a evidencia spotreby", async () => {
   const users = await call("a", "GET", "/api/users");
   const jan = users.body.users.find((u) => u.email === "jan@firma.sk");
   assert.equal(jan.aiThisMonth.calls, 2);
+});
+
+test("AI úloha na pozadí: založenie, výsledok, cudzí používateľ ju nevidí", async () => {
+  const lim = await call("j", "GET", "/api/ai/limits");
+  assert.equal(lim.body.jobs, true);
+  const j = await call("j", "POST", "/api/ai/jobs", { prompt: "pôdorys 1.NP", json: true, images: [{ data: "AAAA", mediaType: "image/jpeg" }] });
+  assert.equal(j.status, 202);
+  let s;
+  for (let i = 0; i < 50; i++) { s = await call("j", "GET", "/api/ai/jobs/" + j.body.id); if (s.body.status === "done") break; await new Promise((r) => setTimeout(r, 20)); }
+  assert.equal(s.body.status, "done"); assert.equal(s.body.result.typStrany, "podorys");
+  assert.equal((await call("a", "GET", "/api/ai/jobs/" + j.body.id)).status, 404);
+  assert.equal((await call("j", "POST", "/api/ai/jobs", { prompt: "" })).status, 400);
+  const jan = (await call("a", "GET", "/api/users")).body.users.find((u) => u.email === "jan@firma.sk");
+  assert.equal(jan.aiThisMonth.calls, 3);
+});
+
+test("zámok po 5 zlých heslách (uložený v databáze)", async () => {
+  for (let i = 0; i < 5; i++) assert.equal((await call("x", "POST", "/api/auth/login", { email: "zamok@firma.sk", password: "zle" })).status, 401);
+  assert.equal((await call("x", "POST", "/api/auth/login", { email: "zamok@firma.sk", password: "zle" })).status, 429);
 });
 
 test("vypnutý účet sa neprihlási a stratí reláciu", async () => {

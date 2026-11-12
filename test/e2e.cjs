@@ -9,9 +9,11 @@ const SHOTS = process.env.SHOTS || path.join(ROOT, "test", "shots");
 const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.umd.js", "pdf.js/3.11.174/pdf.min.js": NM + "pdfjs-dist/build/pdf.min.js", "pdf.js/3.11.174/pdf.worker.min.js": NM + "pdfjs-dist/build/pdf.worker.min.js", "xlsx/0.18.5/xlsx.full.min.js": NM + "xlsx/dist/xlsx.full.min.js", "pdfmake@0.2.10/build/pdfmake.min.js": NM + "pdfmake/build/pdfmake.min.js", "pdfmake@0.2.10/build/vfs_fonts.js": NM + "pdfmake/build/vfs_fonts.js" };
 (async () => {
   fs.mkdirSync(SHOTS, { recursive: true });
-  const srv = spawn(process.execPath, ["server/index.js"], { cwd: ROOT, env: { ...process.env, PORT: "3917", DATABASE_URL: "memory", AI_MOCK: "1", ADMIN_EMAIL: "admin@test.sk", ADMIN_PASSWORD: "heslo12345" }, stdio: ["ignore", "pipe", "pipe"] });
+  // E2E_URL=http://localhost:8888/ → test proti už bežiacej aplikácii (napr. netlify dev) s prázdnou databázou
+  const EXT = process.env.E2E_URL;
+  const srv = EXT ? { kill() {}, stdout: { on() {} }, stderr: { on() {} } } : spawn(process.execPath, ["server/index.js"], { cwd: ROOT, env: { ...process.env, PORT: "3917", DATABASE_URL: "memory", AI_MOCK: "1", ADMIN_EMAIL: "admin@test.sk", ADMIN_PASSWORD: "heslo12345" }, stdio: ["ignore", "pipe", "pipe"] });
   let log = ""; srv.stdout.on("data", (d) => (log += d)); srv.stderr.on("data", (d) => (log += d));
-  for (let i = 0; i < 50 && !/beží/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
+  for (let i = 0; i < 50 && !EXT && !/beží/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
   const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell" });
   const errs = [];
   const fail = (m) => { throw new Error(m); };
@@ -20,7 +22,7 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     page.on("pageerror", (e) => errs.push("PAGEERR " + e.message));
     page.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) errs.push("CONSOLE " + m.text()); });
     await page.route("**/*", (route) => { const u = route.request().url(); for (const k in MAP) if (u.includes(k)) return route.fulfill({ path: MAP[k], contentType: "application/javascript" }); if (/fonts\.(googleapis|gstatic)/.test(u)) return route.fulfill({ body: "", contentType: "text/css" }); return route.continue(); });
-    const U = "http://localhost:3917/";
+    const U = EXT || "http://localhost:3917/";
     await page.goto(U); await page.waitForSelector("#email");
     await page.screenshot({ path: SHOTS + "/01_login.png" });
     await page.fill("#email", "admin@test.sk"); await page.fill("#password", "zle-heslo"); await page.click("button[type=submit]");

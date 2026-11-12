@@ -66,15 +66,54 @@
 
   // ---------- AI ----------
   const blobToB64 = (b) => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = bad; r.readAsDataURL(b); });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let limitsP = null;
+  const getLimits = () => (limitsP = limitsP || api("GET", "/api/ai/limits").catch((e) => { limitsP = null; throw e; }));
+
+  /** Prekreslí obrázok s nižšou kvalitou / menší (keď sú výkresy spolu väčšie, ako server prijme). */
+  async function reencode(blob, quality, scale) {
+    const bmp = await createImageBitmap(blob);
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(bmp.width * scale)); c.height = Math.max(1, Math.round(bmp.height * scale));
+    const g = c.getContext("2d");
+    g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(bmp, 0, 0, c.width, c.height);
+    return new Promise((ok) => c.toBlob((b) => ok(b || blob), "image/jpeg", quality));
+  }
+  async function encodeImages(blobs, maxTotal) {
+    const steps = [[1, 1], [0.72, 1], [0.6, 1], [0.6, 0.85], [0.5, 0.75], [0.45, 0.65]];
+    for (const [q, s] of steps) {
+      const out = [];
+      for (const b of blobs) {
+        const bb = q === 1 ? b : await reencode(b, q, s);
+        out.push({ data: await blobToB64(bb), mediaType: bb.type || "image/jpeg" });
+      }
+      if (!maxTotal || out.reduce((n, x) => n + x.data.length, 0) <= maxTotal) return out;
+    }
+    throw Object.assign(new Error("Výkres je príliš veľký na odoslanie. Skúste PDF s menším počtom strán alebo menším rozlíšením."), { code: "too_large" });
+  }
+
   async function aiCall(prompt, opts, json) {
-    const images = [];
-    for (const b of (opts && opts.images) || []) images.push({ data: await blobToB64(b), mediaType: b.type || "image/jpeg" });
-    const r = await api("POST", "/api/ai", { prompt, images, json, tier: opts && opts.modelTier === "quick" ? "quick" : "complex" });
-    return r.result;
+    const lim = await getLimits().catch(() => ({}));
+    const images = await encodeImages((opts && opts.images) || [], lim.images && lim.images.maxTotalBase64);
+    const body = { prompt, images, json, tier: opts && opts.modelTier === "quick" ? "quick" : "complex" };
+    if (!lim.jobs) return (await api("POST", "/api/ai", body)).result;
+    // úloha na pozadí: založ a pýtaj sa na výsledok (čítanie výkresu môže trvať aj minútu)
+    const job = await api("POST", "/api/ai/jobs", body);
+    const t0 = Date.now();
+    for (let i = 0; ; i++) {
+      await sleep(i < 3 ? 1500 : 2500);
+      let s;
+      try { s = await api("GET", "/api/ai/jobs/" + encodeURIComponent(job.id)); }
+      catch (e) { if (e.status >= 500 && Date.now() - t0 < 20 * 60e3) continue; throw e; }
+      if (s.status === "done") return s.result;
+      if (s.status === "error") throw Object.assign(new Error(s.error || "Čítanie cez AI zlyhalo."), { code: s.code || "failed" });
+      if (Date.now() - t0 > 20 * 60e3) throw Object.assign(new Error("Čítanie cez AI trvá príliš dlho. Skúste to znova."), { code: "timeout" });
+    }
   }
   const sample = async (prompt, opts) => ({ text: await aiCall(prompt, opts, false) });
   sample.json = (prompt, opts) => aiCall(prompt, opts, true);
-  sample.limits = () => api("GET", "/api/ai/limits");
+  sample.limits = () => getLimits();
 
   // ---------- súbory a sťahovanie ----------
   const assets = {
