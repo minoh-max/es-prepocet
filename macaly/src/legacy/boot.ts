@@ -118,6 +118,53 @@ export async function boot(convexUrl: string) {
   sample.json = (prompt: string, opts: any) => aiCall(prompt, opts, true)
   sample.limits = async () => AI_LIMITS
 
+  // ---------- súbory (logo, číselník, PDF štúdie) ----------
+  // Aplikácia odkazuje na súbor ako "/_blob/<id>" (ako na pôvodnom serveri). Tu sa taká adresa
+  // zmení na krátkodobú súkromnú adresu z Macaly: pri fetch(), pri <img> a pri kliknutí na odkaz.
+  const assets = {
+    async upload(blob: Blob & { name?: string }) {
+      const name = blob.name || "subor"
+      const g: any = await a(api.esFiles.createUpload, { filename: name, contentType: blob.type || "application/octet-stream", fileSize: blob.size })
+      const res = await fetch(g.uploadUrl, { method: g.method, headers: g.headers, body: blob })
+      if (!res.ok) throw Object.assign(new Error("Nahratie súboru zlyhalo (" + res.status + ")."), { code: "upload_failed" })
+      return a(api.esFiles.finalizeUpload, { fileId: g.fileId, name })
+    },
+    list: async () => ({ assets: [] }),
+    delete: (id: string) => a(api.esFiles.remove, { fileId: id }),
+  }
+  const blobCache = new Map<string, { url: string; until: number }>()
+  const blobId = (u: string) => { const mm = /^(?:https?:\/\/[^/]+)?\/_blob\/([^?#]+)/.exec(u || ""); return mm ? decodeURIComponent(mm[1]) : null }
+  async function blobUrl(id: string) {
+    const c = blobCache.get(id)
+    if (c && c.until > Date.now()) return c.url
+    const d: any = await a(api.esFiles.downloadUrl, { fileId: id })
+    blobCache.set(id, { url: d.url, until: Date.now() + 4 * 60e3 })
+    return d.url as string
+  }
+  const origFetch = window.fetch.bind(window)
+  window.fetch = (async (input: any, init?: any) => {
+    const id = typeof input === "string" ? blobId(input) : null
+    if (!id) return origFetch(input, init)
+    try { return await origFetch(await blobUrl(id), init) } catch { return new Response(null, { status: 404 }) }
+  }) as typeof window.fetch
+  const fixImg = (img: HTMLImageElement) => {
+    const id = blobId(img.getAttribute("src") || "")
+    if (id) blobUrl(id).then((u) => { if (blobId(img.getAttribute("src") || "") === id) img.src = u }).catch(() => {})
+  }
+  new MutationObserver((muts) => {
+    for (const mu of muts) {
+      if (mu.type === "attributes" && mu.target instanceof HTMLImageElement) fixImg(mu.target)
+      mu.addedNodes.forEach((n) => { if (n instanceof HTMLElement) { if (n instanceof HTMLImageElement) fixImg(n); n.querySelectorAll("img[src^='/_blob/']").forEach((i) => fixImg(i as HTMLImageElement)) } })
+    }
+  }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["src"] })
+  document.addEventListener("click", (e) => {
+    const link = (e.target as HTMLElement)?.closest?.("a[href^='/_blob/']") as HTMLAnchorElement | null
+    if (!link) return
+    e.preventDefault()
+    const w = window.open("", "_blank")
+    blobUrl(blobId(link.getAttribute("href")!)!).then((u) => { if (w) w.location.href = u; else location.href = u }).catch((x) => { if (w) w.close(); alert(x.message || "Súbor sa nepodarilo otvoriť.") })
+  }, true)
+
   // ---------- sťahovanie súborov (PDF výstup) ----------
   const downloads = {
     async save({ filename, data }: { filename: string; data: Blob }) {
@@ -175,7 +222,7 @@ export async function boot(convexUrl: string) {
     isOwner: async () => me.role === "admin",
     can: async () => true,
   }
-  const caps: Record<string, any> = { db, user, sample, assets: null, downloads }
+  const caps: Record<string, any> = { db, user, sample, assets, downloads }
   window.claude = { use: async (name: string) => caps[name] || null }
   window.ESServer = {
     me,

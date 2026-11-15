@@ -22,5 +22,7 @@ export default defineSchema({
   esDocs: defineTable({ path: v.string(), parent: v.string(), dataJson: v.string(), version: v.number(), updatedAt: v.number() })
     .index("by_path", ["path"])
     .index("by_parent", ["parent"]),
+  // nahraté súbory: bajty sú v súkromnom úložisku Macaly (App Files), tu len záznam
+  esFiles: defineTable({ fileId: v.string(), ownerId: v.id("esUsers"), name: v.string(), mime: v.string(), size: v.number(), createdAt: v.number() }).index("by_file", ["fileId"]),
   esAiUsage: defineTable({ userId: v.id("esUsers"), at: v.number(), model: v.string(), ok: v.boolean() }).index("by_at", ["at"]),
 })
