@@ -46,8 +46,10 @@ Hlavné kritérium úspechu: **presný prepočet**.
 - Beží na **Netlify + Neon (PostgreSQL) + Anthropic API kľúč** – ako dnes (schválené používateľom).
 - Bezplatné limity Netlify (6 MB na požiadavku, funkcia na pozadí max. 15 min), viď README.
 - Jazyk rozhrania: slovenčina.
-- Web ekonomicke-stavby.sk nebol z vývojového prostredia dostupný; identita ES sa preberá z dnešnej aplikácie
-  (písmo Noto Sans, modrá ES `#074d8a`, logo „es“) – viď otvorené otázky.
+- Identita ES sa preberá priamo z www.ekonomicke-stavby.sk (overené 2026-11-15):
+  logo „es“ (`/images/global/desktop/logo.pos.sk.svg`, sivá `#60707a`), písmo Noto Sans (nadpisy tenké 300,
+  verzálky s rozostupom písmen), teplá biela `#fcfbf9` / `#f4f0ea`, text `#212111`, akcent červená `#ba1b02`,
+  panely so zaoblením len na jednej strane. Modrá `#074d8a` z dnešnej aplikácie sa už nepoužije ako hlavná farba.
 
 ## Zvažované cesty
 
@@ -123,7 +125,7 @@ Dôvod: katalógové ceny sú overené skutočnými rozpočtami, takže sú pres
 
 - Existujúce testy `engine/` musia ostať zelené; nové pravidlá dostanú testy.
 - **Referenčná sada štúdií** so skutočnou cenou z rozpočtu: automatický test „štúdia → odhad“ a porovnanie s cenou.
-  Cieľová presnosť a súbor štúdií – viď otvorené otázky.
+  Cieľ: odchýlka najviac 3 %.
 - Po nasadení: evidencia skutočnej ceny a karta „Presnosť odhadov“ (existuje).
 - Postup práce: každý krok sa overí (testy + ukážka používateľovi) a až potom sa pokračuje.
 
@@ -133,10 +135,11 @@ Dôvod: katalógové ceny sú overené skutočnými rozpočtami, takže sú pres
 - Presné prahy istoty a kontrol, rozloženie obrazoviek v rámci opísaného postupu.
 - Migrácia uložených prepočtov zo starej verzie (zachovať čitateľné).
 
-## Otvorené otázky (pre používateľa)
+## Odpovede používateľa (2026-11-15)
 
-- Cieľová presnosť (napr. ±3 % od rozpočtu) a dostupnosť niekoľkých štúdií so skutočnou cenou na overenie.
-- Logo a farby ES – potvrdiť alebo dodať (web nebol dostupný).
+- **Cieľová presnosť: odchýlka najviac 3 %** od skutočnej ceny z rozpočtu.
+- Referenčné štúdie so skutočnou cenou **má a dodá** (PDF + cena); kým nie sú, presnosť sa overuje len testami výpočtu.
+- Logo a farby: z www.ekonomicke-stavby.sk (viď Obmedzenia).
 
 ## Rozhodnutia autora návrhu (na kontrolu)
 
