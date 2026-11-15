@@ -17,11 +17,16 @@ fs.mkdirSync(OUT, { recursive: true });
 // 1. výpočtové jadro (TypeScript → jeden súbor s globálnou premennou ESEngine)
 require("esbuild").buildSync({ entryPoints: [path.join(ROOT, "engine/src/lib/estimate/index.ts")], bundle: true, minify: true, format: "iife", globalName: "ESEngine", outfile: path.join(OUT, "engine.js"), logLevel: "warning" });
 
-// 2. aplikácia: logika + obrazovky
-fs.writeFileSync(path.join(OUT, "app.js"), fs.readFileSync(C("logic.js"), "utf8") + fs.readFileSync(C("ui.js"), "utf8"));
+// 2. aplikácia: logika (logic.js + ďalšie moduly) a obrazovky (ui/*.js v jednej spoločnej funkcii; core prvý, zz-mount posledný)
+const read = (p) => fs.readFileSync(C(p), "utf8");
+const modules = ["logic.js", "checks.js", "vector.js", "reference.js"].filter((f) => fs.existsSync(C(f)));
+const uiFiles = fs.readdirSync(C("ui")).filter((f) => f.endsWith(".js")).sort((a, b) => (a === "core.js" ? -1 : b === "core.js" ? 1 : a.localeCompare(b)));
+fs.writeFileSync(path.join(OUT, "app.js"), modules.map(read).join("\n") + "\n(function () {\n" + uiFiles.map((f) => read("ui/" + f)).join("\n") + "})();\n");
 
 // 3. stránka
 let html = fs.readFileSync(C("index.html"), "utf8");
+if (!html.includes("<!--STYLES-->")) throw new Error("index.html: chýba značka <!--STYLES-->");
+html = html.replace("<!--STYLES-->", "<style>\n" + read("styles.css") + "</style>");
 if (!artifact) {
   html = html.replace('<script src="engine.js"></script>\n<script src="app.js"></script>', '<script src="shim.js"></script>');
   if (!html.includes('src="shim.js"')) throw new Error("index.html: nenašiel som skripty engine.js/app.js na nahradenie");

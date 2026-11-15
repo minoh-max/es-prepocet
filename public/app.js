@@ -1056,8 +1056,9 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     blobToDataUrl, buildPdfDoc, pdfBlob,
   };
 })();
-/* ES Prepočet – UI (Preact + htm) */
+
 (function () {
+/* ES Prepočet – UI: spoločné pomôcky, kostra aplikácie (súbory ui/*.js skladá build do jednej funkcie) */
   const { html, render, useState, useEffect, useMemo, useRef } = window.htmPreact;
   const E = window.ESEngine;
   const L = window.ESL;
@@ -1212,7 +1213,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     const nav = [
       ["new", "Nový prepočet", "plus"],
       ["list", "Prepočty", "list"],
-      ["catalog", "Katalóg domov", "home"],
+      ["catalog", "Katalóg", "home"],
       ["prices", "Číselník", "table"],
       ["settings", "Nastavenia", "gear"],
     ];
@@ -1221,16 +1222,19 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     const initials = (profile?.name || caps.current.me?.name || "?").split(" ").map((s) => s[0]).slice(0, 2).join("").toUpperCase();
     const logoUrl = config.company?.logoAssetId ? "/_blob/" + config.company.logoAssetId : null;
 
-    return html`<div class="app">
-      <aside class="sidebar">
-        <div class="brand"><div class="brand-mark">${logoUrl ? html`<img src=${logoUrl} alt="" />` : html`<svg viewBox="70 80 380 190" aria-hidden="true"><use href="#es-logo" /></svg>`}</div><div class="brand-text"><b>ES Prepočet</b><span>Ekonomické stavby</span></div></div>
-        ${nav.map(([k, l, i]) => html`<button class=${"nav-btn" + (view === k ? " active" : "")} onClick=${() => { if (k === "new" && view !== "new") setDraft(draft || newDraft()); setView(k); }}><${Icon} name=${i} />${l}</button>`)}
-        <div class="sidebar-foot">
-          <div class="avatar">${initials}</div>
-          <div class="who grow"><b>${profile?.name || caps.current.me?.name || "Neprihlásený"}</b><span>${caps.current.admin ? "administrátor" : profile?.title || "obchodník"}</span></div>
+    const go = (k) => { if (k === "new" && view !== "new") setDraft(draft || newDraft()); setView(k); };
+    return html`<div class="shell">
+      <header class="topbar">
+        <button class="brand" onClick=${() => go("new")} aria-label="ES Prepočet – nový prepočet">${logoUrl ? html`<img src=${logoUrl} alt="" />` : html`<svg viewBox="70 80 380 190" aria-hidden="true"><use href="#es-logo" /></svg>`}<span class="brand-name">Prepočet</span></button>
+        <nav class="nav" aria-label="Hlavná navigácia">
+          ${nav.map(([k, l, i]) => html`<button class=${"nav-btn" + (k === "new" ? " cta" : "") + (view === k ? " active" : "")} aria-current=${view === k ? "page" : null} onClick=${() => go(k)}><${Icon} name=${i} /><span>${l}</span></button>`)}
+        </nav>
+        <div class="me">
+          <div class="avatar" title=${profile?.name || caps.current.me?.name || ""}>${initials}</div>
+          <div class="who"><b>${profile?.name || caps.current.me?.name || "Neprihlásený"}</b><span>${caps.current.admin ? "administrátor" : profile?.title || "obchodník"}</span></div>
           ${window.ESServer ? html`<button class="btn plain sm" title="Odhlásiť sa" aria-label="Odhlásiť sa" onClick=${() => window.ESServer.logout()}><${Icon} name="logout" /><span class="sr-only">Odhlásiť sa</span></button>` : null}
         </div>
-      </aside>
+      </header>
       <main class="main"><div class="page">
         ${boot.error ? html`<div class="notice bad">${boot.error}</div>` : null}
         ${!ctx ? html`<div class="empty"><div class="spinner"></div><p>Načítavam katalóg a číselník…</p></div>` : null}
@@ -1252,6 +1256,8 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     };
   }
 
+
+/* ES Prepočet – UI: obrazovky (pôvodné, postupne nahrádzané) */
   // ---------- Wizard ----------
   function Wizard({ ctx, draft, setDraft }) {
     const upd = (patch) => setDraft((d) => ({ ...(d || draft), ...patch }));
@@ -2437,5 +2443,6 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         <tbody>${list.map((p) => html`<tr><td><b>${p.name || "–"}</b></td><td>${p.username ? "@" + p.username : "–"}</td><td>${p.email || "–"}</td><td>${p.phone || "–"}</td><td>${p.title || "–"}</td><td>${fmtDate(p.createdAt)}</td></tr>`)}</tbody></table></div>`}</div>`;
   }
 
+/* ES Prepočet – UI: spustenie (musí byť posledný súbor) */
   render(html`<${App} />`, document.getElementById("root"));
 })();

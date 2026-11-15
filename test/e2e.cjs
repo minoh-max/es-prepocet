@@ -14,7 +14,7 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
   const srv = EXT ? { kill() {}, stdout: { on() {} }, stderr: { on() {} } } : spawn(process.execPath, ["server/index.js"], { cwd: ROOT, env: { ...process.env, PORT: "3917", DATABASE_URL: "memory", AI_MOCK: "1", ADMIN_EMAIL: "admin@test.sk", ADMIN_PASSWORD: "heslo12345" }, stdio: ["ignore", "pipe", "pipe"] });
   let log = ""; srv.stdout.on("data", (d) => (log += d)); srv.stderr.on("data", (d) => (log += d));
   for (let i = 0; i < 50 && !EXT && !/beží/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
-  const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell" });
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || (fs.existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : undefined) });
   const errs = [];
   const fail = (m) => { throw new Error(m); };
   try {
@@ -28,10 +28,16 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.fill("#email", "admin@test.sk"); await page.fill("#password", "zle-heslo"); await page.click("button[type=submit]");
     await page.waitForSelector(".err:not([hidden])"); console.log("zlé heslo:", await page.textContent(".err"));
     await page.fill("#password", "heslo12345"); await page.click("button[type=submit]");
-    await page.waitForSelector(".sidebar", { timeout: 15000 }); await page.waitForTimeout(800);
+    await page.waitForSelector(".topbar", { timeout: 15000 }); await page.waitForTimeout(800);
+    // vzhľad ES: logo, písmo, sivá ES v hornej lište
+    const look = await page.evaluate(() => ({ logo: !!document.querySelector('.topbar svg use[href="#es-logo"]'), font: getComputedStyle(document.body).fontFamily, brand: getComputedStyle(document.querySelector(".topbar .brand")).color, bg: getComputedStyle(document.body).backgroundColor }));
+    if (!look.logo) fail("v hornej lište chýba logo ES");
+    if (!/Noto Sans/.test(look.font)) fail("písmo nie je Noto Sans: " + look.font);
+    if (look.brand !== "rgb(96, 112, 122)") fail("logo nie je v sivej ES: " + look.brand);
+    if (look.bg !== "rgb(252, 251, 249)") fail("pozadie nie je teplá biela ES: " + look.bg);
     console.log("prihlásený admin, menu:", (await page.$$eval(".nav-btn", (x) => x.map((n) => n.textContent.trim()))).join(" | "));
     // nový obchodník
-    await page.click(".sidebar >> text=Nastavenia"); await page.waitForTimeout(300);
+    await page.click(".topbar >> text=Nastavenia"); await page.waitForTimeout(300);
     await page.click(".seg >> text=Používatelia"); await page.waitForTimeout(500);
     await page.fill("#nu-name", "Ján Obchodník"); await page.fill("#nu-email", "jan@test.sk"); await page.fill("#nu-pass", "docasne123");
     await page.click("button:has-text(\"Pridať používateľa\")"); await page.waitForTimeout(800);
@@ -41,7 +47,7 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.click(".seg >> text=Výpočet"); await page.waitForTimeout(400);
     await page.screenshot({ path: SHOTS + "/03_calc.png", fullPage: true });
     // nový prepočet so štúdiou
-    await page.click(".sidebar >> text=Nový prepočet"); await page.waitForTimeout(400);
+    await page.click(".topbar >> text=Nový prepočet"); await page.waitForTimeout(400);
     await page.setInputFiles("input[type=file]", [path.join(ROOT, "test", "fixtures", "plan.png")]); await page.waitForTimeout(800);
     await page.click("text=Rozpoznať podklady"); await page.waitForSelector("text=Poznámka k podkladom", { timeout: 30000 }); await page.waitForTimeout(800);
     await page.click("text=Vypočítať odhad"); await page.waitForTimeout(1200);
@@ -51,7 +57,7 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.click("text=Uložiť prepočet"); await page.waitForTimeout(1000);
     const dl = page.waitForEvent("download", { timeout: 15000 });
     await page.click("text=Exportovať PDF"); const d = await dl; console.log("PDF:", d.suggestedFilename());
-    await page.click(".sidebar >> text=Prepočty"); await page.waitForTimeout(1200);
+    await page.click(".topbar >> text=Prepočty"); await page.waitForTimeout(1200);
     console.log("prepočty:", await page.$$eval("table.t tbody tr", (r) => r.length));
     const inp = await page.$("input.actual"); if (!inp) fail("chýba pole skutočná cena");
     await inp.fill("300000"); await inp.press("Enter"); await page.waitForTimeout(1200);
@@ -61,13 +67,18 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.click("text=Odhlásiť sa"); await page.waitForSelector("#email");
     await page.fill("#email", "jan@test.sk"); await page.fill("#password", "docasne123"); await page.click("button[type=submit]");
     await page.waitForSelector("#next"); await page.fill("#current", "docasne123"); await page.fill("#next", "noveheslo1"); await page.fill("#again", "noveheslo1"); await page.click("button[type=submit]");
-    await page.waitForSelector(".sidebar", { timeout: 15000 }); await page.waitForTimeout(600);
+    await page.waitForSelector(".topbar", { timeout: 15000 }); await page.waitForTimeout(600);
     console.log("obchodník menu:", (await page.$$eval(".nav-btn", (x) => x.map((n) => n.textContent.trim()))).join(" | "));
     const r = await page.evaluate(async () => (await fetch("/api/doc", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "config/app", data: { x: 1 } }) })).status);
     console.log("obchodník zápis do nastavení (čakám 403):", r);
-    await page.setViewportSize({ width: 390, height: 844 }); await page.goto(U); await page.waitForSelector(".sidebar"); await page.waitForTimeout(500);
+    await page.setViewportSize({ width: 390, height: 844 }); await page.goto(U); await page.waitForSelector(".topbar"); await page.waitForTimeout(500);
     await page.screenshot({ path: SHOTS + "/06_mobile.png" });
-    console.log("mobil pretečenie:", await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth));
+    const navTop = await page.evaluate(() => document.querySelector(".nav").getBoundingClientRect().top);
+    if (navTop < 700) fail("na mobile nie je navigácia dole (top " + navTop + ")");
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    console.log("mobil pretečenie:", overflow);
+    if (overflow) fail("na mobile stránka preteká do šírky");
+    if (errs.length) fail("chyby v konzole: " + errs.join(" | "));
   } finally {
     console.log("CHYBY:", errs.slice(0, 10));
     await b.close(); srv.kill();

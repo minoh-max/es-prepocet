@@ -5,3 +5,4 @@ test/shots/
 *.log
 .DS_Store
 .netlify/
+.superpowers/

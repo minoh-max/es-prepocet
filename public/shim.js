@@ -134,13 +134,15 @@
 
   // ---------- prihlásenie ----------
   const loginCss = `
-    .auth { min-height: 100vh; display: grid; place-items: center; background: var(--surface-2); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px; }
-    .auth form { width: min(380px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 28px; display: flex; flex-direction: column; gap: 14px; }
-    .auth .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
-    .auth .logo svg { width: 64px; height: 44px; color: var(--accent); }
-    .auth h1 { font-size: 18px; font-weight: 600; color: var(--navy); margin: 0; }
+    .auth { min-height: 100vh; display: grid; place-items: center; background: var(--bg); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px; }
+    .auth form { width: min(400px, 100%); background: var(--surface); border-radius: 24px; box-shadow: var(--shadow); padding: 40px 36px 36px; display: flex; flex-direction: column; gap: 16px; }
+    .auth .logo { display: flex; flex-direction: column; align-items: center; gap: 18px; margin-bottom: 10px; text-align: center; }
+    .auth .logo svg { width: 96px; height: 48px; color: var(--accent); }
+    .auth h1 { font-size: 20px; font-weight: 300; text-transform: uppercase; letter-spacing: 0.16em; color: var(--fg); margin: 0; }
     .auth p { margin: 0; color: var(--fg-2); font-size: 13px; }
-    .auth .err { color: var(--danger); background: var(--danger-soft); padding: 8px 10px; border-radius: 8px; font-size: 13px; }`;
+    .auth .logo p { letter-spacing: 0.08em; margin-top: 4px; }
+    .auth .btn { margin-top: 6px; }
+    .auth .err { color: var(--danger); background: var(--danger-soft); padding: 10px 12px; border-radius: 12px; font-size: 13px; }`;
   function authScreen(title, intro, fields, button, onSubmit) {
     if (!document.getElementById("auth-css")) { const st = document.createElement("style"); st.id = "auth-css"; st.textContent = loginCss; document.head.appendChild(st); }
     root().innerHTML = `<div class="auth"><form novalidate>
