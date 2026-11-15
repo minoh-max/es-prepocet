@@ -149,7 +149,7 @@ assert.deepEqual(m.sources.builtAreaM2, [{ file: "vykresy.pdf", page: 1, pageTyp
 - Test: `test/client.test.js`
 
 **Interfaces:**
-- Consumes: `ESL.findClosestHouses(params, houses, text, limit)`, `ESL.houseParams(h)`, `ESEngine.estimate(input)` (existujúce; výsledok má `deltas: ElementDelta[]` a príplatky – presné názvy polí prevziať z `engine/src/lib/estimate/types.ts`, `EstimateResult`).
+- Consumes: `ESL.findClosestHouses(params, houses, text, limit)`, `ESL.houseParams(h)`, `ESEngine.estimate(input)` (existujúce; výsledok `EstimateResult` má `elements: ElementDelta[]`, `estimateInclVat`, `basePriceInclVat`, `warnings` – viď `engine/src/lib/estimate/types.ts`).
 - Produces:
   - `ESL.detectMode(merged, houses) -> { mode: "catalog"|"individual", houseId?: number, score: number }` – `catalog`, ak `merged.houseName` zodpovedá domu v katalógu (`nameKey`) alebo najbližší dom má úžitkovú plochu do ±8 % a rovnaký typ podlažnosti a strechy; inak `individual`;
   - `ESL.pickReference(study, houses) -> { house, score, outOfRange: boolean }` – najbližší dom rovnakého `floorsType`; `outOfRange = true`, ak sa úžitková plocha líši o viac ako 35 % od najbližšieho domu;
@@ -174,7 +174,7 @@ assert.deepEqual(m.sources.builtAreaM2, [{ file: "vykresy.pdf", page: 1, pageTyp
 Správanie (rozhoduje plán):
 - Krok 1: plocha na pretiahnutie PDF, priebeh čítania po stranách s náhľadmi, typ projektu navrhnutý cez `detectMode` s prepínačom „Z katalógu / Individuálny“.
 - Krok 2: skupiny údajov (Dom, Plochy, Konštrukcia, Otvory, Kúpeľne, Technika, Navyše). Každý riadok: hodnota, odznak istoty, odkaz „s. 3“; klik otvorí `Sheet` s náhľadom strany a citátom z `study.sources`. Hore zhrnutie „N údajov treba overiť“. Riadok s `confidence: "low"` má tlačidlo „Potvrdiť“ (nastaví `draft.confirmed[field]`) alebo sa potvrdí úpravou hodnoty. Tlačidlo „Pokračovať“ je neaktívne, kým existuje nepotvrdený údaj `low` alebo check `error`.
-- Krok 3: zoznam rozdielov (z `result.deltas` + príplatky) – názov, zdroj, množstvo, položka číselníka, suma; prepínač vypnutia a úprava množstva; súčet sa prepočíta okamžite. Vonkajšie úpravy a prípojky v samostatnej karte.
+- Krok 3: zoznam rozdielov (z `result.elements`) – názov, zdroj, množstvo, položka číselníka, suma; prepínač vypnutia a úprava množstva; súčet sa prepočíta okamžite. Vonkajšie úpravy a prípojky v samostatnej karte.
 - Krok 4: `.hero-price` s cenou s DPH, pod ňou riadky „Katalógová cena / Rozdiely oproti štandardu / Príplatky / Vonkajšie úpravy a prípojky (zvlášť)“, karta „Navyše oproti štandardu“ z `extrasVsStandard`, pri individuálnom projekte štítok „Individuálny projekt“ a pri `outOfRange` upozornenie „Projekt je mimo rozsahu katalógu – odhad overte rozpočtom“. Tlačidlá „Uložiť“ a „PDF“.
 
 - [ ] **Step 1:** Rozšíriť `test/e2e.cjs`:
