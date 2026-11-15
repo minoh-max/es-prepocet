@@ -18,7 +18,7 @@ export function computeGeometry(p: HouseParams, s: EstimateSettings): Geometry {
   const knee = p.kneeWallM ?? s.defaults.kneeWallM;
   const overhang = p.roofOverhangM ?? s.defaults.roofOverhangM;
   const flat = p.roofType === "plocha";
-  const pitch = flat ? 0 : (p.roofPitchDeg ?? (p.floorsType === "podkrovie" ? s.defaults.roofPitchAtticDeg ?? s.defaults.roofPitchDeg : s.defaults.roofPitchDeg));
+  const pitch = flat ? 0 : (p.roofPitchDeg ?? (p.floorsType === "podkrovie" ? s.defaults.roofPitchAtticDeg ?? s.defaults.roofPitchDeg : p.floorsType === "bungalov" ? s.defaults.roofPitchBungalowDeg ?? s.defaults.roofPitchDeg : s.defaults.roofPitchDeg));
 
   const w = p.widthM && p.lengthM ? Math.min(p.widthM, p.lengthM) : undefined;
   const l = p.widthM && p.lengthM ? Math.max(p.widthM, p.lengthM) : undefined;

@@ -153,9 +153,15 @@ describe("estimate engine", () => {
     expect(v.heatingSource).toBe("plyn");
   });
 
+  it("uses the ES standard roof pitch by house type: bungalov 22°, poschodový 35°, podkrovie 40°", () => {
+    expect(standardHouse({ ...base0(), floorsType: "bungalov", roofType: "valbova" }, s).roofPitchDeg).toBe(22);
+    expect(standardHouse({ ...base0(), floorsType: "poschodovy", roofType: "valbova" }, s).roofPitchDeg).toBe(35);
+    expect(standardHouse({ ...base0(), floorsType: "podkrovie", roofType: "sedlova" }, s).roofPitchDeg).toBe(40);
+  });
+
   it("builds the catalog house in fixed ES standard", () => {
     const b = standardHouse(base0(), s);
-    expect(b.roofPitchDeg).toBe(35);
+    expect(b.roofPitchDeg).toBe(22);
     expect(b.foundation?.type).toBe("pasy_dt");
     expect(b.openings?.find((o) => o.type === "vchodove")?.count).toBe(1);
     const win = b.openings!.filter((o) => ["okno", "balkonove"].includes(o.type)).reduce((a, o) => a + o.widthM! * o.heightM! * o.count, 0);

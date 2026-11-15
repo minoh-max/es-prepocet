@@ -16,7 +16,7 @@ export const DEFAULT_ENGINE_SETTINGS: EstimateSettings = {
   markupShell: 1.6,
   optimizationThresholdPct: 10,
   accuracyBandPct: 5,
-  defaults: { storeyHeightM: 2.95, kneeWallM: 1.0, roofOverhangM: 0.5, roofPitchDeg: 35, roofPitchAtticDeg: 40 },
+  defaults: { storeyHeightM: 2.95, kneeWallM: 1.0, roofOverhangM: 0.5, roofPitchDeg: 35, roofPitchBungalowDeg: 22, roofPitchAtticDeg: 40 },
   standardFoundation: {
     type: "pasy_dt", dtRows: 1, dtThicknessMm: 300, dtRowHeightMm: 250,
     stripWidthM: 0.5, stripDepthM: 0.65, slabThicknessM: 0.15, gravelThicknessM: 0.125,

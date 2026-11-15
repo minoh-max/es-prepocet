@@ -202,6 +202,7 @@ export interface EstimateSettings {
     roofOverhangM: number;
     roofPitchDeg: number;
     roofPitchAtticDeg?: number; // sklon pri dome s podkrovím
+    roofPitchBungalowDeg?: number; // sklon pri bungalove (štandard ES 22°)
   };
   /** Pevné štandardné založenie (VOTP: pásy z DT na pätke + doska). */
   standardFoundation: Foundation;

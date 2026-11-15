@@ -67,6 +67,13 @@ export function standardOpenings(p: HouseParams, s: EstimateSettings): Opening[]
 }
 
 /** The catalog house in fixed ES standard – every value the catalog does not give is a fixed standard value. */
+/** Štandardný sklon strechy ES podľa typu domu: bungalov 22°, s podkrovím 40°, poschodový 35°. */
+export function defaultRoofPitch(floorsType: HouseParams["floorsType"], d: EstimateSettings["defaults"]): number {
+  if (floorsType === "podkrovie") return d.roofPitchAtticDeg ?? d.roofPitchDeg;
+  if (floorsType === "bungalov") return d.roofPitchBungalowDeg ?? d.roofPitchDeg;
+  return d.roofPitchDeg;
+}
+
 export function standardHouse(catalog: HouseParams, s: EstimateSettings): HouseParams {
   const d = s.defaults;
   const attic = catalog.floorsType === "podkrovie";
@@ -74,7 +81,7 @@ export function standardHouse(catalog: HouseParams, s: EstimateSettings): HouseP
     ...catalog,
     storeyHeightM: d.storeyHeightM,
     kneeWallM: attic ? d.kneeWallM : undefined,
-    roofPitchDeg: catalog.roofType === "plocha" ? undefined : attic ? d.roofPitchAtticDeg ?? d.roofPitchDeg : d.roofPitchDeg,
+    roofPitchDeg: catalog.roofType === "plocha" ? undefined : defaultRoofPitch(catalog.floorsType, d),
     roofOverhangM: d.roofOverhangM,
     heatingSource: "plyn", heatingDistribution: "podlahove", centralRecuperation: false, chimney: false, fireplace: false,
     wcs: catalog.wcs ?? 1,

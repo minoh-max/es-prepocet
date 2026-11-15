@@ -1502,7 +1502,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         ${geo("storeyHeightM", "Konštrukčná výška podlažia", "m", "num", b.storeyHeightM, 2)}
         ${study.floorsType === "podkrovie" || b.floorsType === "podkrovie" ? geo("kneeWallM", "Nadmurovka", "m", "num", b.kneeWallM, 2) : null}
         ${geo("roofType", "Typ strechy", "", "roof")}
-        ${study.roofType !== "plocha" ? geo("roofPitchDeg", "Sklon strechy", "°", "num", b.roofPitchDeg ?? (study.floorsType === "podkrovie" ? ctx.settings.defaults.roofPitchAtticDeg : ctx.settings.defaults.roofPitchDeg), 0) : null}
+        ${study.roofType !== "plocha" ? geo("roofPitchDeg", "Sklon strechy", "°", "num", b.roofPitchDeg ?? (E.defaultRoofPitch ? E.defaultRoofPitch(study.floorsType, ctx.settings.defaults) : study.floorsType === "podkrovie" ? ctx.settings.defaults.roofPitchAtticDeg : ctx.settings.defaults.roofPitchDeg), 0) : null}
         ${note(!!(study.rooms && house.rooms && study.rooms !== house.rooms), "Počet izieb", house.rooms, study.rooms)}
         ${html`<${CRow} label="Počet izieb" std=${house.rooms || "–"} changed=${!!(study.rooms && house.rooms && study.rooms !== house.rooms)} c=${conf.rooms}><${NumInput} value=${study.rooms} onChange=${(v) => setS("rooms", v)} /><//>`}
         ${geo("garages", "Garážové státia", "ks", "num", b.garages || 0, 0)}
@@ -2344,7 +2344,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
       <div class="section-title">Ceny a prirážky</div>
       <div class="group">${N("vatRate", "Sadzba DPH", "0,23 = 23 %")}${N("markupShell", "Prirážka – hrubá uzatvorená stavba", "násobok nákladov z číselníka (základy, murivo, strecha, okná, vchodové dvere), napr. 1,6")}${N("markup", "Prirážka – ostatné položky", "presun hmôt + GZS + zisk a réžia, napr. 1,08")}${N("optimizationThresholdPct", "Prah pre optimalizáciu (%)")}${N("accuracyBandPct", "Základné rozpätie odhadu (± %)")}</div>
       <div class="section-title">Predvolené rozmery</div>
-      <div class="group">${N("defaults.storeyHeightM", "Konštrukčná výška podlažia (m)")}${N("defaults.kneeWallM", "Nadmurovka (m)")}${N("defaults.roofPitchDeg", "Sklon strechy – bungalov/poschodový (°)")}${N("defaults.roofPitchAtticDeg", "Sklon strechy – s podkrovím (°)")}${N("defaults.roofOverhangM", "Presah strechy (m)")}
+      <div class="group">${N("defaults.storeyHeightM", "Konštrukčná výška podlažia (m)")}${N("defaults.kneeWallM", "Nadmurovka (m)")}${N("defaults.roofPitchBungalowDeg", "Sklon strechy – bungalov (°)")}${N("defaults.roofPitchDeg", "Sklon strechy – poschodový (°)")}${N("defaults.roofPitchAtticDeg", "Sklon strechy – s podkrovím (°)")}${N("defaults.roofOverhangM", "Presah strechy (m)")}
         ${N("standardOpenings.windowSharePct", "Plocha okien a balk. dverí (% úžitkovej plochy)")}${N("standardOpenings.interiorDoorPerM2", "Vnútorné dvere – 1 ks na m² úžitkovej plochy")}${N("standardOpenings.balconyPerM2", "Balkónové dvere – 1 ks na m² úžitkovej plochy")}</div>
       <div class="section-title">Štandardné založenie</div>
       <div class="group">${N("standardFoundation.dtRows", "Počet radov DT tvárnic")}${N("standardFoundation.dtThicknessMm", "Hrúbka DT (mm)")}${N("standardFoundation.dtRowHeightMm", "Výška radu DT (mm)")}${N("standardFoundation.stripWidthM", "Šírka pätky (m)")}${N("standardFoundation.stripDepthM", "Výška pätky (m)")}${N("standardFoundation.slabThicknessM", "Hrúbka dosky (m)")}${N("standardFoundation.gravelThicknessM", "Štrkový podsyp (m)")}</div>
