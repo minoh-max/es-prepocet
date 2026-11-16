@@ -57,6 +57,7 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.click("text=Vypočítať odhad"); await page.waitForTimeout(1200);
     await page.screenshot({ path: SHOTS + "/04_result.png" });
     const est = await page.textContent(".kpi.hero .kpi-value"); console.log("odhad:", est);
+    const cc = await page.textContent("#cross-check").catch(() => null); console.log("kontrola:", (cc || "").replace(/\s+/g, " ").slice(0, 140)); if (!cc || !/Kontrola z \d+ podobných domov/.test(cc)) errors.push("chýba kontrola z podobných domov");
     await page.fill("#client-name", "Test klient").catch(() => {});
     await page.click("text=Uložiť prepočet"); await page.waitForTimeout(1000);
     const dl = page.waitForEvent("download", { timeout: 15000 });

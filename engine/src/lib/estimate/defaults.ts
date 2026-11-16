@@ -12,11 +12,20 @@ import type { EstimateSettings } from "./types";
 export const DEFAULT_ENGINE_SETTINGS: EstimateSettings = {
   vatRate: 0.23,
   // z rozpočtov RP3 25/130 a RP1 25/135: HUS ≈ 1,45–1,5 × náklad, ostatné položky za cenu číselníka; na všetko presun hmôt 2 %, GZS 3,5 %, zisk 4 %
-  markup: 1.08,
+  // položky mimo HUS: 1,02 × 1,035 × 1,04 = 1,098 (overené na rekapitulácii 6 klientskych rozpočtov)
+  markup: 1.098,
   markupShell: 1.6,
   optimizationThresholdPct: 10,
   accuracyBandPct: 5,
   fireplaceByClient: true,
+  // Firemné ceny s DPH podľa skutočných klientskych rozpočtov (prednosť pred konfigurátorom na webe):
+  // TČ ESTIA HWT601 + rozšírenie OKC 250 = 11 221 – 11 638 € bez DPH (25/112, 25/115, 25/130) mínus plynový kotol
+  // so zásobníkom, dymovodom a rozvodom plynu 2 881 € (25/120) → 8 525 × 1,098 × 1,23 ≈ 11 500 € s DPH
+  heatPumpInclVat: 11500,
+  // komín Schiedel Absolut 6,3 m + nadstrešná časť 1,45 m = 3 863 € bez DPH (25/120) × 1,098 × 1,23 ≈ 5 200 € s DPH
+  chimneyInclVat: 5200,
+  // prefarbené okná (farba zvonku, vnútri biele): +23,2 % k cene bieleho okna (25/120 vs. 25/112, 25/115, 25/130)
+  windowColorSurcharge: 0.232,
   defaults: { storeyHeightM: 2.95, kneeWallM: 1.0, roofOverhangM: 0.5, roofPitchDeg: 35, roofPitchBungalowDeg: 22, roofPitchAtticDeg: 40 },
   standardFoundation: {
     type: "pasy_dt", dtRows: 1, dtThicknessMm: 300, dtRowHeightMm: 250,
@@ -79,6 +88,15 @@ export const DEFAULT_ENGINE_SETTINGS: EstimateSettings = {
     electricHeatingSaving: 2500,
     hsPortalPerM2: 650,
     slidingFactor: 2,
+    // krov z priehradových väzníkov – paušál dodávateľa v rozpočtoch 7 550 – 11 550 € = 41,9 – 49,4 €/m² plochy krytiny
+    // (25/112 44,9; 25/115 49,4; 25/120 41,9; 25/130 43,2; 23/107 48,9) – priemer 45,7 €/m²
+    roofTrussPerM2: 45.7,
+    // ornica: odstránenie 0,2 m a rozprestretie na ploche ≈ 1,6 × zastavaná plocha (25/115 194 m² pri 121,7 m²)
+    topsoilAreaFactor: 1.6,
+    // svah: ťažba zeminy ≈ zastavaná plocha × 0,24 m × (rady DT − 2); 25/115 (2–8 radov DT): 88 m³ pri 121,7 m²
+    slopeExcavationPerRowM: 0.24,
+    slopeHaulShare: 0.3, // podiel odvezenej zeminy z ťažby (25/115: 52 / 88 m³ odviezli, 25/130: 75 m³ ostalo na pozemku)
+    haulExtraKm: 10, // odvoz zeminy na skládku do 10 km
     kitchenStandard: 2340.43, // kuchynská linka – štandardné prevedenie (náklad z rozpočtov RP1/RP3)
     blindsPerM2: 160,
   },
@@ -103,6 +121,12 @@ export const DEFAULT_ENGINE_SETTINGS: EstimateSettings = {
     plinthInsulation: "B1/011/ISOVER EPS PERIMETER - 100mm",
     interiorPlaster: "A4/004",
     ceilingPlaster: "A4/003",
+    ceilingBoard: "A4/005/999/1RF150", // sadrokartónový podhľad pod strechou (v každom rozpočte ≈ úžitková plocha)
+    topsoilRemoval: "A1/01/002",
+    topsoilSpread: "A1/01/011",
+    soilDig: "A1/01/005",
+    soilHandling: "A1/01/006",
+    soilHaulKm: "A1/01/008",
     screed: "A4/007/010",
     painting: "B8/004",
     scaffolding: "C2/001",

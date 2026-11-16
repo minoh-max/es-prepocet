@@ -52,14 +52,27 @@ export const ELEMENTS: ElementDef[] = [
     key: "zemne", label: "Zemné práce", group: "Hrubá stavba", pricedBy: "ciselnik", inHolodom: true, shell: true,
     compute: (c) => {
       const trench = c.g.foundationLengthM * 0.6 * 1.0;
-      return {
-        quantity: trench, unit: "m³",
-        lines: [
-          priceLine(c.prices, item(c, "excavation"), trench),
-          priceLine(c.prices, item(c, "soilRemoval"), trench * 0.5),
-          priceLine(c.prices, item(c, "backfill"), trench * 0.3),
-        ],
-      };
+      const r = c.s.rates;
+      const topsoil = (c.p.builtAreaM2 || 0) * (r.topsoilAreaFactor ?? 0);
+      const rows = c.p.foundation?.dtRows ?? 1;
+      // svah: ťažba zeminy pod domom podľa počtu radov DT nad 2 (rovný pozemok 1–2 rady)
+      const slope = rows > 2 ? (c.p.builtAreaM2 || 0) * (r.slopeExcavationPerRowM ?? 0) * (rows - 2) : 0;
+      const haul = trench * 0.5 + slope * (r.slopeHaulShare ?? 0);
+      const lines = [
+        priceLine(c.prices, item(c, "excavation"), trench),
+        priceLine(c.prices, item(c, "soilRemoval"), haul),
+        priceLine(c.prices, item(c, "backfill"), trench * 0.3),
+      ];
+      if (topsoil > 0) {
+        lines.push(priceLine(c.prices, item(c, "topsoilRemoval"), topsoil * 0.2));
+        lines.push(priceLine(c.prices, item(c, "topsoilSpread"), topsoil));
+      }
+      if (slope > 0) {
+        lines.push(priceLine(c.prices, item(c, "soilDig"), slope));
+        lines.push(priceLine(c.prices, item(c, "soilHandling"), slope * 1.8));
+      }
+      if (r.haulExtraKm) lines.push(priceLine(c.prices, item(c, "soilHaulKm"), haul * r.haulExtraKm));
+      return { quantity: trench + slope, unit: "m³", lines: lines.filter((l) => l.quantity > 0) };
     },
   },
   {
@@ -163,7 +176,11 @@ export const ELEMENTS: ElementDef[] = [
   {
     key: "krov", label: "Krov", group: "Strecha", pricedBy: "ciselnik", inHolodom: true, shell: true,
     compute: (c) => {
-      const v = isFlat(c.p) ? 0 : c.g.roofAreaM2 * 0.03;
+      // krov = paušál dodávateľa väzníkov, v rozpočtoch ≈ 45,7 €/m² plochy krytiny (sadzba roofTrussPerM2)
+      const a = isFlat(c.p) ? 0 : c.g.roofAreaM2;
+      const rate = c.s.rates.roofTrussPerM2;
+      if (rate) return { quantity: a, unit: "m² strechy", lines: a ? [rateLine("Krov (dodávka a montáž) – sadzba z rozpočtov", "m²", a, rate)] : [] };
+      const v = a * 0.03;
       return { quantity: v, unit: "m³", lines: [priceLine(c.prices, item(c, "roofTimber"), v)] };
     },
   },
@@ -225,7 +242,9 @@ export const ELEMENTS: ElementDef[] = [
       const ops = c.p.openings;
       if (!ops || !ops.length) {
         // bez výpisu otvorov: plocha okien × cena za m² (číselník)
-        return { quantity: c.g.windowsAreaM2, unit: "m² okien", materialLabel: label(c, c.m.window), lines: [priceLine(c.prices, c.m.window, c.g.windowsAreaM2)] };
+        const l0 = priceLine(c.prices, c.m.window, c.g.windowsAreaM2);
+        const sur0 = c.p.windowsColored ? c.s.windowColorSurcharge ?? 0 : 0;
+        return { quantity: c.g.windowsAreaM2, unit: "m² okien", materialLabel: `${label(c, c.m.window)}${c.p.windowsColored ? ", prefarbené" : ""}`, lines: sur0 ? [l0, rateLine("Príplatok za prefarbené okná", "sb", 1, l0.cost * sur0)] : [l0] };
       }
       // ceny okien a balkónových dverí v číselníku sú za m² (rozpočet: plocha × cena), posuvné = 2× cena dvojkrídlových
       const lines: ElementLine[] = [];
@@ -250,9 +269,15 @@ export const ELEMENTS: ElementDef[] = [
         lines.push({ ...l, name: `${l.name} – posuvné (HS) ×${c.s.rates.slidingFactor ?? 2}` });
       }
       const area = sumOpenings(ops, ["okno", "balkonove", "hs"]);
+      const out = lines.filter((l) => l.quantity > 0);
+      const sur = c.p.windowsColored ? c.s.windowColorSurcharge ?? 0 : 0;
+      if (sur) {
+        const base = out.reduce((a, l) => a + l.cost, 0);
+        out.push(rateLine(`Príplatok za prefarbené okná (+${Math.round(sur * 1000) / 10} %)`, "sb", 1, base * sur));
+      }
       return {
-        quantity: area.area, unit: "m² okien", materialLabel: `${label(c, c.m.window)}${hs.count ? `, ${hs.count}× HS portál` : ""}`,
-        lines: lines.filter((l) => l.quantity > 0),
+        quantity: area.area, unit: "m² okien", materialLabel: `${label(c, c.m.window)}${c.p.windowsColored ? ", prefarbené" : ""}${hs.count ? `, ${hs.count}× HS portál` : ""}`,
+        lines: out,
       };
     },
   },
@@ -300,13 +325,17 @@ export const ELEMENTS: ElementDef[] = [
     compute: (c) => {
       const walls = c.g.partitionM2 * 2 + c.g.perimeterM * c.g.exteriorWallHeightM + c.g.interiorBearingM2 * 2;
       const ceil = c.p.usableAreaM2;
+      // podhľad pod strechou je sadrokartón (štandard ES, v každom rozpočte); omietka stropu len pod stropom medzi podlažiami
+      const board = item(c, "ceilingBoard") && c.prices[item(c, "ceilingBoard")];
+      const boardM2 = !board ? 0 : c.p.floorsType === "poschodovy" ? ceil / Math.max(2, c.g.storeys) : c.p.floorsType === "podkrovie" ? ceil * 0.5 : ceil;
       return {
         quantity: walls + ceil, unit: "m²",
         lines: [
           priceLine(c.prices, item(c, "interiorPlaster"), walls),
-          priceLine(c.prices, item(c, "ceilingPlaster"), ceil),
+          ...(boardM2 ? [priceLine(c.prices, item(c, "ceilingBoard"), boardM2)] : []),
+          priceLine(c.prices, item(c, "ceilingPlaster"), ceil - boardM2),
           priceLine(c.prices, item(c, "painting"), walls + ceil),
-        ],
+        ].filter((l) => l.quantity > 0),
       };
     },
   },
@@ -379,8 +408,9 @@ export const ELEMENTS: ElementDef[] = [
       const warnings: string[] = [];
       let incl = 0;
       if (src === "tc") {
-        if (c.extras.heatPump == null) warnings.push("Chýba cena tepelného čerpadla z konfigurátora");
-        incl = c.extras.heatPump ?? 0;
+        const hp = c.s.heatPumpInclVat ?? c.extras.heatPump;
+        if (hp == null) warnings.push("Chýba cena tepelného čerpadla");
+        incl = hp ?? 0;
       } else if (src === "elektro") {
         incl = -c.s.rates.electricHeatingSaving * c.s.markup * (1 + c.s.vatRate);
       } else if (src === "tuhe") {
@@ -429,7 +459,7 @@ export const ELEMENTS: ElementDef[] = [
       materialLabel: [c.p.chimney ? "komín" : "", c.p.fireplace ? (c.s.fireplaceByClient !== false ? "krb – dodáva klient" : "krb") : ""].filter(Boolean).join(" + ") || "bez komína",
       lines: [],
       // krb (kachle, vložku) si podľa praxe ES dodáva klient sám – účtuje sa len komín (nastaviteľné: fireplaceByClient)
-      companyCostInclVat: (c.p.chimney ? c.extras.chimney ?? 0 : 0) + (c.p.fireplace && c.s.fireplaceByClient === false ? c.extras.fireplace ?? 0 : 0),
+      companyCostInclVat: (c.p.chimney ? c.s.chimneyInclVat ?? c.extras.chimney ?? 0 : 0) + (c.p.fireplace && c.s.fireplaceByClient === false ? c.extras.fireplace ?? 0 : 0),
     }),
   },
   {

@@ -130,7 +130,7 @@
     ["Dispozícia a technika", [
       ["rooms", "Počet izieb", "ks", "num"], ["bathrooms", "Kúpeľne", "ks", "num", "noBathDetail"], ["wcs", "Samostatné WC", "ks", "num", "noBathDetail"], ["garages", "Garážové státia", "ks", "num"],
       ["heatingSource", "Zdroj tepla", "", "heat"], ["heatingDistribution", "Rozvod tepla", "", "dist"],
-      ["centralRecuperation", "Centrálna rekuperácia", "", "bool"], ["chimney", "Komín", "", "bool"], ["fireplace", "Krb", "", "bool"],
+      ["centralRecuperation", "Centrálna rekuperácia", "", "bool"], ["chimney", "Komín", "", "bool"], ["fireplace", "Krb", "", "bool"], ["windowsColored", "Prefarbené okná", "", "bool"],
     ]],
   ];
 
@@ -282,11 +282,13 @@
         ${note(!!study.centralRecuperation, "Centrálna rekuperácia", "decentrálna rekuperácia", "centrálna rekuperácia")}
         ${note(!!study.chimney, "Komín", "nie je v štandarde", "áno")}
         ${note(!!study.fireplace, "Krb", "nie je v štandarde", "áno")}
+        ${note(!!study.windowsColored, "Okná", "biele", "prefarbené")}
         <${CRow} label="Zdroj tepla" std=${T.kurenie} changed=${study.heatingSource && study.heatingSource !== "plyn"} c=${conf.heatingSource}><${FieldInput} id="s-heat" type="heat" value=${study.heatingSource} onChange=${(v) => setS("heatingSource", v)} /><//>
         <${CRow} label="Rozvod tepla" std="Podlahové kúrenie v celom dome" changed=${study.heatingDistribution && study.heatingDistribution !== "podlahove"} c=${conf.heatingDistribution}><${FieldInput} id="s-dist" type="dist" value=${study.heatingDistribution} onChange=${(v) => setS("heatingDistribution", v)} /><//>
         <${CRow} label="Centrálna rekuperácia" std=${T.rekuperacia} changed=${!!study.centralRecuperation} c=${conf.centralRecuperation}><${FieldInput} id="s-reku" type="bool" value=${study.centralRecuperation} onChange=${(v) => setS("centralRecuperation", v)} /><//>
         <${CRow} label="Komín" std="Nie je v štandarde" changed=${!!study.chimney} c=${conf.chimney}><${FieldInput} id="s-kom" type="bool" value=${study.chimney} onChange=${(v) => setS("chimney", v)} /><//>
         <${CRow} label="Krb" std="Nie je v štandarde" changed=${!!study.fireplace} c=${conf.fireplace}><${FieldInput} id="s-krb" type="bool" value=${study.fireplace} onChange=${(v) => setS("fireplace", v)} /><//>
+        <${CRow} label="Prefarbené okná" std="Biele okná (prefarbenie +23 % k cene okien)" changed=${!!study.windowsColored} c=${conf.windowsColored}><${FieldInput} id="s-okfarba" type="bool" value=${study.windowsColored} onChange=${(v) => setS("windowsColored", v)} /><//>
         ${txt("Elektroinštalácia", T.elektro, "ako štandard", false)}
         ${txt("Voda a kanalizácia", T.zti, "ako štandard", false)}
         ${txt("Hromozvod", T.hromozvod, "ako štandard", false)}
@@ -437,7 +439,7 @@
   const rowsTxt = (n) => `${n} ${n === 1 ? "rad" : n < 5 ? "rady" : "radov"}`;
   const PAGE_TYPE = { podorys: "pôdorys", rez: "rez", pohlad: "pohľad", vypis_otvorov: "výpis otvorov", technicka_sprava: "technická správa", situacia: "situácia", ine: "iné" };
 
-  const CONF_LABEL = { usableAreaM2: "Úžitková plocha", builtAreaM2: "Zastavaná plocha", widthM: "Šírka domu", lengthM: "Dĺžka domu", floorsType: "Typ domu", storeyHeightM: "Konštrukčná výška podlažia", kneeWallM: "Nadmurovka", roofType: "Typ strechy", roofPitchDeg: "Sklon strechy", rooms: "Počet izieb", garages: "Garáž", bathrooms: "Počet kúpeľní", wcs: "Počet WC", heatingSource: "Zdroj tepla", heatingDistribution: "Rozvod tepla", centralRecuperation: "Rekuperácia", chimney: "Komín", fireplace: "Krb", openings: "Okná a dvere (rozmery)", foundation: "Založenie", bathroomsDetail: "Vybavenie kúpeľní", materials: "Materiály" };
+  const CONF_LABEL = { usableAreaM2: "Úžitková plocha", builtAreaM2: "Zastavaná plocha", widthM: "Šírka domu", lengthM: "Dĺžka domu", floorsType: "Typ domu", storeyHeightM: "Konštrukčná výška podlažia", kneeWallM: "Nadmurovka", roofType: "Typ strechy", roofPitchDeg: "Sklon strechy", rooms: "Počet izieb", garages: "Garáž", bathrooms: "Počet kúpeľní", wcs: "Počet WC", heatingSource: "Zdroj tepla", heatingDistribution: "Rozvod tepla", centralRecuperation: "Rekuperácia", chimney: "Komín", fireplace: "Krb", windowsColored: "Farba okien", openings: "Okná a dvere (rozmery)", foundation: "Založenie", bathroomsDetail: "Vybavenie kúpeľní", materials: "Materiály" };
   const pluralSk = (n, one, few, many) => `${n} ${n === 1 ? one : n > 1 && n < 5 ? few : many}`;
 
   /** "Poznámka k podkladom": what was read, findings by topic, what to verify, differences from the ES standard, summary. */
@@ -658,11 +660,25 @@
     mk("usporny", "Úsporný variant", eco.length ? eco.map((o) => o.title).join("; ") : "", eco.map((o) => o.patch));
     const sel = opts.filter((o) => (draft.variantSel || []).includes(o.id));
     mk("vlastny", "Vlastný variant", sel.map((o) => o.title).join("; "), sel.map((o) => o.patch));
-    return { result: r, house, baseParams: eb.params, studyParams: study, variants, outdoor, outdoorParams };
+    // Kontrola: ten istý prepočet z 5 najpodobnejších katalógových domov. Ceny katalógových domov rovnakej veľkosti sa líšia
+    // aj o 10 %, preto medián z viacerých domov je spoľahlivejší (test na katalógu: do 3 % pri 40 % domov oproti 34 % z jedného domu).
+    const peers = L.findClosestHouses(study, ctx.houses, "", 5).map((m) => m.house);
+    if (!peers.some((h) => h.id === house.id)) peers.unshift(house);
+    const cross = peers.map((h) => {
+      const pb = L.effectiveBase(h, ctx.settings);
+      const price = draft.finish === "holodom" ? h.hol : h.price;
+      if (!price) return null;
+      const v = E.computeEstimate({ basePriceInclVat: price, finish: draft.finish, base: pb.params, study, prices: ctx.prices, settings: ctx.settings, extras: ctx.extras });
+      return { id: h.id, name: h.name, estimate: v.estimateInclVat };
+    }).filter(Boolean);
+    const sorted = cross.map((x) => x.estimate).sort((a, b) => a - b);
+    const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : r.estimateInclVat;
+    const check = { peers: cross, median, low: sorted[0], high: sorted[sorted.length - 1], devPct: (r.estimateInclVat / median - 1) * 100 };
+    return { result: r, house, baseParams: eb.params, studyParams: study, variants, outdoor, outdoorParams, check };
   }
 
   function StepResult({ ctx, draft, upd }) {
-    const { result: r, house, baseParams, studyParams, variants, outdoor } = useMemo(() => computeFor(ctx, draft), [draft.study, draft.baseOverrides, draft.baseHouseId, draft.finish, draft.variantSel, ctx.prices, ctx.settings]);
+    const { result: r, house, baseParams, studyParams, variants, outdoor, check } = useMemo(() => computeFor(ctx, draft), [draft.study, draft.baseOverrides, draft.baseHouseId, draft.finish, draft.variantSel, ctx.prices, ctx.settings]);
     const toggleSel = (id) => { const cur = draft.variantSel || []; upd({ variantSel: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] }); };
     const [detail, setDetail] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -695,6 +711,7 @@
             optimizations: r.optimizations.map(({ patch, ...o }) => o),
             variants: variants.map(({ id, name, estimate, changePct }) => ({ id, name, estimate: Math.round(estimate), changePct })),
             outdoor: { inclVat: Math.round(outdoor.inclVat), exclVat: Math.round(outdoor.exclVat), missing: outdoor.missing },
+            check: check ? { median: Math.round(check.median), low: Math.round(check.low), high: Math.round(check.high), devPct: Math.round(check.devPct * 10) / 10, peers: check.peers.map((p) => ({ name: p.name, estimate: Math.round(p.estimate) })) } : null,
           },
           priceListVersion: ctx.priceList.version || "", status: "hotový", createdAt: draft.createdAt || Date.now(), updatedAt: Date.now(),
         };
@@ -739,6 +756,13 @@
         <div class="card kpi"><div class="kpi-label">Zmena oproti východiskovému</div><div class="kpi-value num ${r.changeInclVat > 0 ? "delta-up" : "delta-down"}">${fmtSigned(r.changeInclVat)}</div><div class="kpi-sub"><${Pill} pct=${r.changePct} /> <span style="margin-left:6px">bez DPH ${fmtEur(r.estimateExclVat)}</span></div></div>
       </div>
       ${r.warnings.length ? html`<div class="notice"><div><b>Na overenie</b><ul>${r.warnings.slice(0, 6).map((w) => html`<li>${w}</li>`)}</ul></div></div>` : null}
+      ${check && check.peers.length > 1 ? html`<div class=${"notice " + (Math.abs(check.devPct) > 3 ? "alert" : "info")} id="cross-check"><div>
+        <b>Kontrola z ${check.peers.length} podobných domov: medián ${fmtEur(check.median)}</b> (${fmtEur(check.low)} – ${fmtEur(check.high)}).
+        ${Math.abs(check.devPct) > 3
+          ? html` Odhad z domu ${house.name} sa od mediánu líši o ${fmtNum(check.devPct, 1)} %. Ak klient nevychádza práve z tohto domu, použite medián alebo vyberte bližší dom.`
+          : html` Odhad z domu ${house.name} sedí s ostatnými domami (${fmtNum(check.devPct, 1)} %).`}
+        <div class="small muted" style="margin-top:4px">${check.peers.map((p) => `${p.name} ${fmtEur(p.estimate)}`).join(" · ")}</div>
+      </div></div>` : null}
       <div class="card">
         <div class="card-head"><div><h2>Čo cenu ovplyvnilo najviac</h2><div class="sub">Rozdiel voči domu ${house.name}, s DPH</div></div>
           <button class="btn plain sm" onClick=${() => setDetail(!detail)}>${detail ? "Skryť rozpis" : "Celý rozpis"}</button></div>
@@ -1084,7 +1108,7 @@
     return html`
       <div class="notice info"><div><b>Tu sa ladí presnosť výpočtu.</b> Každá zmena platí pre nové prepočty hneď po uložení; uložené prepočty sa prepočítajú, keď ich otvoríte. Štandard ES je podľa sprievodcu VOTP_SK.03_26, prirážky a sadzby podľa 7 rozpočtov ES (RP1–RP8, cenové úrovne 260323–260504). Presnosť sledujte v Prepočty → Skutočná cena z rozpočtu.</div></div>
       <div class="section-title">Ceny a prirážky</div>
-      <div class="group">${N("vatRate", "Sadzba DPH", "0,23 = 23 %")}${N("markupShell", "Prirážka – hrubá uzatvorená stavba", "násobok nákladov z číselníka (základy, murivo, strecha, okná, vchodové dvere), napr. 1,6")}${N("markup", "Prirážka – ostatné položky", "presun hmôt + GZS + zisk a réžia, napr. 1,08")}${N("optimizationThresholdPct", "Prah pre optimalizáciu (%)")}${N("accuracyBandPct", "Základné rozpätie odhadu (± %)")}</div>
+      <div class="group">${N("vatRate", "Sadzba DPH", "0,23 = 23 %")}${N("markupShell", "Prirážka – hrubá uzatvorená stavba", "násobok nákladov z číselníka (základy, murivo, strecha, okná, vchodové dvere), napr. 1,6")}${N("markup", "Prirážka – ostatné položky", "presun hmôt 2 % × GZS 3,5 % × zisk 4 % = 1,098")}${N("optimizationThresholdPct", "Prah pre optimalizáciu (%)")}${N("accuracyBandPct", "Základné rozpätie odhadu (± %)")}</div>
       <div class="section-title">Predvolené rozmery</div>
       <div class="group">${N("defaults.storeyHeightM", "Konštrukčná výška podlažia (m)")}${N("defaults.kneeWallM", "Nadmurovka (m)")}${N("defaults.roofPitchBungalowDeg", "Sklon strechy – bungalov (°)")}${N("defaults.roofPitchDeg", "Sklon strechy – poschodový (°)")}${N("defaults.roofPitchAtticDeg", "Sklon strechy – s podkrovím (°)")}${N("defaults.roofOverhangM", "Presah strechy (m)")}
         ${N("standardOpenings.windowSharePct", "Plocha okien a balk. dverí (% úžitkovej plochy)")}${N("standardOpenings.interiorDoorPerM2", "Vnútorné dvere – 1 ks na m² úžitkovej plochy")}${N("standardOpenings.balconyPerM2", "Balkónové dvere – 1 ks na m² úžitkovej plochy")}</div>

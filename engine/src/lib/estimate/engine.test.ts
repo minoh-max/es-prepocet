@@ -53,7 +53,7 @@ describe("estimate engine", () => {
   it("krb si dodáva klient: účtuje sa len komín, krb sa uvedie ako mimo dodávky ES", () => {
     const chimneyOnly = computeEstimate(input({ ...base, chimney: true }));
     const withFireplace = computeEstimate(input({ ...base, chimney: true, fireplace: true }));
-    expect(chimneyOnly.estimateInclVat).toBe(287000 + 2897);
+    expect(chimneyOnly.estimateInclVat).toBe(287000 + 5200); // komín podľa rozpočtu 25/120
     expect(withFireplace.estimateInclVat).toBe(chimneyOnly.estimateInclVat);
     const el = withFireplace.elements.find((e) => e.key === "komin_krb")!;
     expect(el.study.materialLabel).toMatch(/krb – dodáva klient/);
@@ -62,8 +62,34 @@ describe("estimate engine", () => {
 
   it("adds company prices (incl. VAT) without markup", () => {
     const r = computeEstimate(input({ ...base, heatingSource: "tc" }));
-    expect(r.changeInclVat).toBe(8940);
+    expect(r.changeInclVat).toBe(11500); // TČ podľa rozpočtov (prednosť pred konfigurátorom 8 940)
     expect(r.topDrivers[0].key).toBe("zdroj_tepla");
+    const cfg = computeEstimate({ ...input({ ...base, heatingSource: "tc" }), settings: { ...s, heatPumpInclVat: undefined } });
+    expect(cfg.changeInclVat).toBe(8940);
+  });
+
+  it("prefarbené okná: +23,2 % k cene okien, HUS prirážka", () => {
+    const plain = computeEstimate(input({ ...base }));
+    const col = computeEstimate(input({ ...base, windowsColored: true }));
+    const okna = plain.elements.find((e) => e.key === "okna")!;
+    expect(col.changeInclVat).toBeCloseTo(okna.study.cost * 0.232 * (s.markupShell ?? s.markup) * (1 + s.vatRate), 0);
+  });
+
+  it("krov sa počíta sadzbou z rozpočtov za m² strechy", () => {
+    const r = computeEstimate(input({ ...base }));
+    const krov = r.elements.find((e) => e.key === "krov")!;
+    const g = computeGeometry(base, s);
+    expect(krov.study.cost).toBeCloseTo(g.roofAreaM2 * 45.7, 0);
+  });
+
+  it("svah: viac radov DT pridá ťažbu a odvoz zeminy", () => {
+    const f = { ...s.standardFoundation };
+    const flat = computeEstimate(input({ ...base, foundation: { ...f, dtRows: 2 } }));
+    const slope = computeEstimate(input({ ...base, foundation: { ...f, dtRows: 5 } }));
+    const z = (r: typeof flat) => r.elements.find((e) => e.key === "zemne")!.study.cost;
+    expect(z(flat)).toBeLessThan(z(slope));
+    // 3 rady nad 2 × 0,24 m × zastavaná plocha
+    expect(slope.elements.find((e) => e.key === "zemne")!.study.lines.find((l) => l.pathCode === "A1/01/005")!.quantity).toBeCloseTo(base.builtAreaM2 * 0.24 * 3, 3);
   });
 
   it("applies markup and VAT to číselník deltas", () => {

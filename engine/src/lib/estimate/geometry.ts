@@ -49,10 +49,13 @@ export function computeGeometry(p: HouseParams, s: EstimateSettings): Geometry {
   const windowsCount = ext ? ext.count : p.windowsCount ?? Math.max(1, Math.round(windowsAreaM2 / 1.8));
   const facadeNetM2 = Math.max(0, facadeGrossM2 - windowsAreaM2);
 
+  // pôdorys s presahom zo zastavanej plochy a obvodu (obdĺžnik okolo domu nadhodnocuje členité domy:
+  // 25/120 by mal 205 m² strechy namiesto 180 m² z rozpočtu)
   const footprintWithOverhangM2 =
-    w && l ? (w + 2 * overhang) * (l + 2 * overhang) : p.builtAreaM2 + perimeterM * overhang;
+    p.builtAreaM2 ? p.builtAreaM2 + perimeterM * overhang : w && l ? (w + 2 * overhang) * (l + 2 * overhang) : 0;
+  // valbová: plocha krytiny v rozpočtoch = 1,07 – 1,10 × (zastavaná + obvod × presah) / cos(sklon) (25/115, 25/120, 25/130, 23/107)
   const shapeFactor =
-    p.roofType === "kombinovana" ? 1.12 : p.roofType === "valbova" ? 1.03 : 1.0;
+    p.roofType === "kombinovana" ? 1.12 : p.roofType === "valbova" ? 1.08 : 1.0;
   const roofAreaM2 = flat
     ? p.builtAreaM2 * 1.02
     : (footprintWithOverhangM2 / Math.cos(rad(pitch))) * shapeFactor;

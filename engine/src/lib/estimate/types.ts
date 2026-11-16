@@ -143,6 +143,7 @@ export interface HouseParams {
   centralRecuperation?: boolean; // štandard = decentrálna
   chimney?: boolean;
   fireplace?: boolean;
+  windowsColored?: boolean; // prefarbené okná (štandard ES = biele)
   materials?: MaterialChoices; // nevyplnené = štandard ES
   rooms?: number;
   openings?: Opening[];
@@ -193,6 +194,9 @@ export interface UnitRates {
 export interface EstimateSettings {
   vatRate: number; // 0.23
   fireplaceByClient?: boolean; // krb si dodáva klient (predvolene áno) – účtuje sa len komín
+  heatPumpInclVat?: number; // príplatok za TČ oproti plynu s DPH podľa rozpočtov (prednosť pred konfigurátorom)
+  chimneyInclVat?: number; // komín s DPH podľa rozpočtov (prednosť pred konfigurátorom)
+  windowColorSurcharge?: number; // príplatok za prefarbené okná (podiel z ceny bieleho okna)
   markup: number; // prirážka na položky mimo hrubej stavby (presun hmôt, GZS, zisk a réžia)
   markupShell?: number; // prirážka na hrubú uzatvorenú stavbu (paušál HUS)
   optimizationThresholdPct: number; // 10
@@ -260,6 +264,12 @@ export type FixedItemKey =
   | "plinthInsulation"
   | "interiorPlaster"
   | "ceilingPlaster"
+  | "ceilingBoard"
+  | "topsoilRemoval"
+  | "topsoilSpread"
+  | "soilDig"
+  | "soilHandling"
+  | "soilHaulKm"
   | "screed"
   | "painting"
   | "scaffolding"

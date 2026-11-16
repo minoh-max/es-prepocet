@@ -244,6 +244,8 @@ table.t td.w-img, table.t th.w-img { width: 76px; padding-right: 0; }
 
 .toast { position: fixed; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 980px; box-shadow: var(--shadow-pop); z-index: 60; font-weight: 500; max-width: calc(100vw - 32px); }
 .notice { padding: 12px 14px; border-radius: 12px; background: var(--warn-soft); color: var(--warn); display: flex; gap: 10px; align-items: flex-start; }
+.notice.alert { background: color-mix(in srgb, var(--alert) 10%, var(--bg)); color: var(--alert); }
+.notice.info { background: var(--bg-2, #f4f0ea); color: var(--fg); }
 .notice.info { background: var(--accent-soft); color: var(--accent); }
 .notice.bad { background: var(--danger-soft); color: var(--danger); }
 .notice ul { margin: 4px 0 0; padding-left: 18px; }
