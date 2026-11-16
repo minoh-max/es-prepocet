@@ -1214,7 +1214,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
       ["new", "Nový prepočet", "plus"],
       ["list", "Prepočty", "list"],
       ["catalog", "Katalóg", "home"],
-      ["prices", "Číselník", "table"],
+      ...(caps.current.admin ? [["prices", "Číselník", "table"]] : []), // výrobné ceny – len administrátor
       ["settings", "Nastavenia", "gear"],
     ];
     const startNew = (house) => { setDraft(newDraft(house)); setView("new"); };
@@ -1241,7 +1241,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         ${ctx && view === "new" ? html`<${Wizard} ctx=${ctx} draft=${draft || newDraft()} setDraft=${setDraft} onSaved=${() => setView("list")} />` : null}
         ${ctx && view === "list" ? html`<${EstimatesList} ctx=${ctx} onOpen=${openEstimate} onNew=${() => startNew()} />` : null}
         ${ctx && view === "catalog" ? html`<${Catalog} ctx=${ctx} onUse=${startNew} />` : null}
-        ${ctx && view === "prices" ? html`<${PriceList} ctx=${ctx} />` : null}
+        ${ctx && view === "prices" && ctx.caps.admin ? html`<${PriceList} ctx=${ctx} />` : null}
         ${ctx && view === "settings" ? html`<${Settings} ctx=${ctx} />` : null}
       </div></main>
       ${toast ? html`<div class="toast" role="status">${toast}</div>` : null}
@@ -1612,7 +1612,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     const tanks = useMemo(() => pick("A3/008/"), [ctx.prices]);
     const plants = useMemo(() => pick("A3/010/"), [ctx.prices]);
     const pumps = useMemo(() => pick("A3/009/XXX/CS/"), [ctx.prices]);
-    const opt = (x) => html`<option value=${x.path_code}>${E.itemLabel(x)} · ${fmtEur(E.unitCost(x))} bez DPH</option>`;
+    const opt = (x) => html`<option value=${x.path_code}>${E.itemLabel(x)}${ctx.caps.admin ? " · " + fmtEur(E.unitCost(x)) + " bez DPH" : ""}</option>`; // výrobná cena len pre administrátora
     const yardDefs = s.extrasCatalog.filter((d) => d.group === s.outdoorRules.extrasGroup && !["pripojkaVoda", "pripojkaKanal", "pripojkaPlyn", "pripojkaElektro", "zumpa", "cov", "zamkovaDlazba"].includes(d.key));
     const ex = o.extras || [];
     const len = (k, label, hint) => html`<div class="field"><label for=${"o-" + k}>${label}${conf[k] ? html` <${Conf} c=${conf[k]} ev=${ev[k]} />` : null}</label>
@@ -2010,8 +2010,8 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
           ${Math.abs(r.otherDeltaInclVat) >= 1 ? html`<div class="driver"><div><div class="name muted">Ostatné drobné zmeny</div></div><div></div><div class="val">${fmtSigned(r.otherDeltaInclVat)}</div></div>` : null}
         </div>
         ${detail ? html`<div class="table-wrap" style="border-top:1px solid var(--line)"><table class="t dense">
-          <thead><tr><th>Prvok</th><th class="num">Východiskový</th><th class="num">Štúdia</th><th class="num">Náklad východ.</th><th class="num">Náklad štúdia</th><th class="num">Vplyv s DPH</th></tr></thead>
-          <tbody>${r.elements.map((e) => html`<tr><td><b>${e.label}</b><div class="faint small">${e.explanation}</div></td><td class="num">${fmtNum(e.base.quantity, 1)} ${e.base.unit}</td><td class="num">${fmtNum(e.study.quantity, 1)} ${e.study.unit}</td><td class="num">${e.pricedBy === "firma" ? "cenník firmy" : fmtEur(e.base.cost)}</td><td class="num">${e.pricedBy === "firma" ? "" : fmtEur(e.study.cost)}</td><td class=${"num " + (e.deltaInclVat > 0 ? "delta-up" : e.deltaInclVat < 0 ? "delta-down" : "")}>${fmtSigned(e.deltaInclVat)}</td></tr>`)}</tbody>
+          <thead><tr><th>Prvok</th><th class="num">Východiskový</th><th class="num">Štúdia</th>${ctx.caps.admin ? html`<th class="num">Náklad východ.</th><th class="num">Náklad štúdia</th>` : null}<th class="num">Vplyv s DPH</th></tr></thead>
+          <tbody>${r.elements.map((e) => html`<tr><td><b>${e.label}</b><div class="faint small">${e.explanation}</div></td><td class="num">${fmtNum(e.base.quantity, 1)} ${e.base.unit}</td><td class="num">${fmtNum(e.study.quantity, 1)} ${e.study.unit}</td>${ctx.caps.admin ? html`<td class="num">${e.pricedBy === "firma" ? "cenník firmy" : fmtEur(e.base.cost)}</td><td class="num">${e.pricedBy === "firma" ? "" : fmtEur(e.study.cost)}</td>` : null}<td class=${"num " + (e.deltaInclVat > 0 ? "delta-up" : e.deltaInclVat < 0 ? "delta-down" : "")}>${fmtSigned(e.deltaInclVat)}</td></tr>`)}</tbody>
         </table></div>` : null}
       </div>
       ${!r.optimizationNeeded ? html`<div class="notice info"><div>Zmena ceny je v rámci ${fmtNum(ctx.settings.optimizationThresholdPct)} % – optimalizácia nie je potrebná.${r.optimizations.length ? " Možné úspory nižšie slúžia na prípravu variantov." : ""}</div></div>` : null}

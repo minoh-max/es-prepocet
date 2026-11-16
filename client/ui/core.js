@@ -154,7 +154,7 @@
       ["new", "Nový prepočet", "plus"],
       ["list", "Prepočty", "list"],
       ["catalog", "Katalóg", "home"],
-      ["prices", "Číselník", "table"],
+      ...(caps.current.admin ? [["prices", "Číselník", "table"]] : []), // výrobné ceny – len administrátor
       ["settings", "Nastavenia", "gear"],
     ];
     const startNew = (house) => { setDraft(newDraft(house)); setView("new"); };
@@ -181,7 +181,7 @@
         ${ctx && view === "new" ? html`<${Wizard} ctx=${ctx} draft=${draft || newDraft()} setDraft=${setDraft} onSaved=${() => setView("list")} />` : null}
         ${ctx && view === "list" ? html`<${EstimatesList} ctx=${ctx} onOpen=${openEstimate} onNew=${() => startNew()} />` : null}
         ${ctx && view === "catalog" ? html`<${Catalog} ctx=${ctx} onUse=${startNew} />` : null}
-        ${ctx && view === "prices" ? html`<${PriceList} ctx=${ctx} />` : null}
+        ${ctx && view === "prices" && ctx.caps.admin ? html`<${PriceList} ctx=${ctx} />` : null}
         ${ctx && view === "settings" ? html`<${Settings} ctx=${ctx} />` : null}
       </div></main>
       ${toast ? html`<div class="toast" role="status">${toast}</div>` : null}

@@ -68,7 +68,9 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.fill("#email", "jan@test.sk"); await page.fill("#password", "docasne123"); await page.click("button[type=submit]");
     await page.waitForSelector("#next"); await page.fill("#current", "docasne123"); await page.fill("#next", "noveheslo1"); await page.fill("#again", "noveheslo1"); await page.click("button[type=submit]");
     await page.waitForSelector(".topbar", { timeout: 15000 }); await page.waitForTimeout(600);
-    console.log("obchodník menu:", (await page.$$eval(".nav-btn", (x) => x.map((n) => n.textContent.trim()))).join(" | "));
+    const salesMenu = await page.$$eval(".nav-btn", (x) => x.map((n) => n.textContent.trim()));
+    console.log("obchodník menu:", salesMenu.join(" | "));
+    if (salesMenu.some((t) => /Číselník/.test(t))) fail("obchodník nesmie vidieť číselník (výrobné ceny)");
     const r = await page.evaluate(async () => (await fetch("/api/doc", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "config/app", data: { x: 1 } }) })).status);
     console.log("obchodník zápis do nastavení (čakám 403):", r);
     await page.setViewportSize({ width: 390, height: 844 }); await page.goto(U); await page.waitForSelector(".topbar"); await page.waitForTimeout(500);
