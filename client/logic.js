@@ -250,7 +250,10 @@
     const items = roleItems(prices, roleKey);
     const t = norm(text);
     const tokens = [...new Set(t.split(/[^a-z0-9]+/).filter((w) => w.length >= 3 || /^\d+$/.test(w)))];
-    const th = thicknessFromText(text);
+    // Hrúbka chýba v texte („YTONG KLASIK“): neber hocijakú hrúbku (napr. 50 mm), ale hrúbku zo štandardu ES pre túto rolu.
+    const thText = thicknessFromText(text);
+    const stdPath = E.DEFAULT_ENGINE_SETTINGS && E.DEFAULT_ENGINE_SETTINGS.standardSpec && E.DEFAULT_ENGINE_SETTINGS.standardSpec[roleKey];
+    const th = thText || (stdPath && prices[stdPath] ? E.parseThicknessMm(prices[stdPath]) : undefined);
     let best = null;
     for (const it of items) {
       const itxt = norm(`${it.name} ${it.specification || ""} ${it.path_code} ${it.group || ""}`);
@@ -266,7 +269,8 @@
       if (!best || s > best.score) best = { item: it, score: s };
     }
     if (!best || best.score < 4) return { path: null, score: best ? best.score : 0, thickness: th };
-    return { path: best.item.path_code, score: best.score, thickness: th, confidence: best.score >= 8 ? "high" : best.score >= 5.5 ? "medium" : "low" };
+    const conf = best.score >= 8 ? "high" : best.score >= 5.5 ? "medium" : "low";
+    return { path: best.item.path_code, score: best.score, thickness: th, confidence: !thText && conf === "high" ? "medium" : conf };
   }
 
   // ---------- reading uploaded files ----------

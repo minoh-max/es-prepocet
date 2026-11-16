@@ -33,3 +33,14 @@ test("DT na svahu: rozpätie „2 až 8 radov“ → počíta sa priemer (5), ni
   assert.match(m.evidence.foundation, /2–8 radov DT, počíta sa s priemerom 5/);
   assert.strictEqual(m.confidence.foundation, "low");
 });
+
+test("materiál bez hrúbky („YTONG KLASIK“): obvodové murivo nesmie skončiť ako 50 mm stena", () => {
+  const cis = JSON.parse(fs.readFileSync(path.join(R, "client/data/ciselnik.json"), "utf8"));
+  const prices = L.buildPrices(cis, {});
+  const m = L.mapMaterial(prices, "wall", "YTONG KLASIK");
+  const th = ctx.ESEngine.parseThicknessMm(prices[m.path]);
+  assert.ok(th >= 200, "hrúbka " + th + " mm (" + m.path + ")");
+  assert.notStrictEqual(m.confidence, "high");
+  const m2 = L.mapMaterial(prices, "wall", "YTONG KLASIK P2-500 hr. 250 mm");
+  assert.strictEqual(ctx.ESEngine.parseThicknessMm(prices[m2.path]), 250);
+});
