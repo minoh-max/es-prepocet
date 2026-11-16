@@ -53,12 +53,13 @@ function buildSide(p0: HouseParams, input: EstimateInput): Side {
 export function standardOpenings(p: HouseParams, s: EstimateSettings): Opening[] {
   const so = s.standardOpenings;
   const balc = Math.max(1, Math.round(p.usableAreaM2 / so.balconyPerM2));
+  const bw = so.balconyWidthM ?? 0.9, bh = so.balconyHeightM ?? 2.2;
   const total = (p.usableAreaM2 * so.windowSharePct) / 100;
-  const winArea = Math.max(0, total - balc * 0.9 * 2.2);
+  const winArea = Math.max(0, total - balc * bw * bh);
   const wins = Math.max(1, Math.round(winArea / (so.windowWidthM * so.windowHeightM)));
   const out: Opening[] = [
     { type: "okno", widthM: so.windowWidthM, heightM: so.windowHeightM, count: wins, label: "štandard" },
-    { type: "balkonove", widthM: 0.9, heightM: 2.2, count: balc, label: "štandard" },
+    { type: "balkonove", widthM: bw, heightM: bh, count: balc, label: "štandard" },
     { type: "vchodove", widthM: 1.1, heightM: 2.2, count: 1, label: "štandard" },
   ];
   if (p.garages) out.push({ type: "garazova", widthM: 2.5 * p.garages, heightM: 2.25, count: 1, label: "štandard" });
@@ -67,10 +68,11 @@ export function standardOpenings(p: HouseParams, s: EstimateSettings): Opening[]
 }
 
 /** The catalog house in fixed ES standard – every value the catalog does not give is a fixed standard value. */
-/** Štandardný sklon strechy ES podľa typu domu: bungalov 22°, s podkrovím 40°, poschodový 35°. */
-export function defaultRoofPitch(floorsType: HouseParams["floorsType"], d: EstimateSettings["defaults"]): number {
+/** Štandardný sklon strechy ES podľa typu domu: bungalov 22°, s podkrovím 40°, poschodový valbová 23°, inak 35°. */
+export function defaultRoofPitch(floorsType: HouseParams["floorsType"], d: EstimateSettings["defaults"], roofType?: HouseParams["roofType"]): number {
   if (floorsType === "podkrovie") return d.roofPitchAtticDeg ?? d.roofPitchDeg;
   if (floorsType === "bungalov") return d.roofPitchBungalowDeg ?? d.roofPitchDeg;
+  if (roofType === "valbova" && d.roofPitchHipDeg) return d.roofPitchHipDeg;
   return d.roofPitchDeg;
 }
 
@@ -81,7 +83,7 @@ export function standardHouse(catalog: HouseParams, s: EstimateSettings): HouseP
     ...catalog,
     storeyHeightM: d.storeyHeightM,
     kneeWallM: attic ? d.kneeWallM : undefined,
-    roofPitchDeg: catalog.roofType === "plocha" ? undefined : defaultRoofPitch(catalog.floorsType, d),
+    roofPitchDeg: catalog.roofType === "plocha" ? undefined : defaultRoofPitch(catalog.floorsType, d, catalog.roofType),
     roofOverhangM: d.roofOverhangM,
     heatingSource: "plyn", heatingDistribution: "podlahove", centralRecuperation: false, chimney: false, fireplace: false,
     wcs: catalog.wcs ?? 1,

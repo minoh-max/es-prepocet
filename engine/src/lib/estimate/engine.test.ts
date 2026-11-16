@@ -189,9 +189,10 @@ describe("estimate engine", () => {
     expect(v.heatingSource).toBe("plyn");
   });
 
-  it("uses the ES standard roof pitch by house type: bungalov 22°, poschodový 35°, podkrovie 40°", () => {
+  it("uses the ES standard roof pitch by house type: bungalov 22°, poschodový valbová 23° (František 14), inak 35°, podkrovie 40°", () => {
     expect(standardHouse({ ...base0(), floorsType: "bungalov", roofType: "valbova" }, s).roofPitchDeg).toBe(22);
-    expect(standardHouse({ ...base0(), floorsType: "poschodovy", roofType: "valbova" }, s).roofPitchDeg).toBe(35);
+    expect(standardHouse({ ...base0(), floorsType: "poschodovy", roofType: "valbova" }, s).roofPitchDeg).toBe(23);
+    expect(standardHouse({ ...base0(), floorsType: "poschodovy", roofType: "sedlova" }, s).roofPitchDeg).toBe(35);
     expect(standardHouse({ ...base0(), floorsType: "podkrovie", roofType: "sedlova" }, s).roofPitchDeg).toBe(40);
   });
 
@@ -219,5 +220,13 @@ describe("estimate engine", () => {
     expect(line.cost).toBeCloseTo(612.26, 1);
     const hs = computeEstimate(input({ ...base0(), openings: [{ type: "hs" as const, widthM: 3.0, heightM: 2.3, count: 1 }] }));
     expect(hs.elements.find((e) => e.key === "okna")!.study.lines[0].cost).toBeCloseTo(4365.49, 0);
+  });
+
+  it("štandardné otvory podľa typového projektu: dvojkrídle okná 1,5 × 1,45 m, jedny balkónové dvere 1,8 × 2,25 m na ≈ 100 m²", () => {
+    const b = standardHouse({ ...base0(), usableAreaM2: 141.55, floorsType: "poschodovy", roofType: "valbova" }, s);
+    const okna = b.openings!.find((o) => o.type === "okno")!, balk = b.openings!.find((o) => o.type === "balkonove")!;
+    expect(okna.widthM).toBe(1.5);
+    expect(balk.count).toBe(1);
+    expect(balk.widthM).toBe(1.8);
   });
 });

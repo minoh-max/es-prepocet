@@ -40,7 +40,9 @@
       usableAreaM2: h.pu, builtAreaM2: h.pz,
       widthM: h.w || undefined, lengthM: h.l || undefined,
       floorsType: KIND[h.kind] || "bungalov", roofType: ROOF[h.roof] || "sedlova",
-      bathrooms: h.bath || 1, wcs: 1, garages: h.gar || 0,
+      bathrooms: h.bath || 1,
+      // samostatné WC: pri 2 a viac kúpeľniach ho typové domy nemajú (František 14, Blanka 3 B), pri jednej kúpeľni áno (Kristína 12)
+      wcs: (h.bath || 1) >= 2 ? 0 : 1, garages: h.gar || 0,
       heatingSource: "plyn", heatingDistribution: "podlahove",
       centralRecuperation: false, chimney: false, fireplace: false,
     };
@@ -1540,7 +1542,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         ${geo("storeyHeightM", "Konštrukčná výška podlažia", "m", "num", b.storeyHeightM, 2)}
         ${study.floorsType === "podkrovie" || b.floorsType === "podkrovie" ? geo("kneeWallM", "Nadmurovka", "m", "num", b.kneeWallM, 2) : null}
         ${geo("roofType", "Typ strechy", "", "roof")}
-        ${study.roofType !== "plocha" ? geo("roofPitchDeg", "Sklon strechy", "°", "num", b.roofPitchDeg ?? (E.defaultRoofPitch ? E.defaultRoofPitch(study.floorsType, ctx.settings.defaults) : study.floorsType === "podkrovie" ? ctx.settings.defaults.roofPitchAtticDeg : ctx.settings.defaults.roofPitchDeg), 0) : null}
+        ${study.roofType !== "plocha" ? geo("roofPitchDeg", "Sklon strechy", "°", "num", b.roofPitchDeg ?? (E.defaultRoofPitch ? E.defaultRoofPitch(study.floorsType, ctx.settings.defaults, study.roofType) : study.floorsType === "podkrovie" ? ctx.settings.defaults.roofPitchAtticDeg : ctx.settings.defaults.roofPitchDeg), 0) : null}
         ${note(!!(study.rooms && house.rooms && study.rooms !== house.rooms), "Počet izieb", house.rooms, study.rooms)}
         ${html`<${CRow} label="Počet izieb" std=${house.rooms || "–"} changed=${!!(study.rooms && house.rooms && study.rooms !== house.rooms)} c=${conf.rooms}><${NumInput} value=${study.rooms} onChange=${(v) => setS("rooms", v)} /><//>`}
         ${geo("garages", "Garážové státia", "ks", "num", b.garages || 0, 0)}

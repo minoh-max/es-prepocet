@@ -40,7 +40,9 @@
       usableAreaM2: h.pu, builtAreaM2: h.pz,
       widthM: h.w || undefined, lengthM: h.l || undefined,
       floorsType: KIND[h.kind] || "bungalov", roofType: ROOF[h.roof] || "sedlova",
-      bathrooms: h.bath || 1, wcs: 1, garages: h.gar || 0,
+      bathrooms: h.bath || 1,
+      // samostatné WC: pri 2 a viac kúpeľniach ho typové domy nemajú (František 14, Blanka 3 B), pri jednej kúpeľni áno (Kristína 12)
+      wcs: (h.bath || 1) >= 2 ? 0 : 1, garages: h.gar || 0,
       heatingSource: "plyn", heatingDistribution: "podlahove",
       centralRecuperation: false, chimney: false, fireplace: false,
     };

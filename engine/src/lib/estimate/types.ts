@@ -208,11 +208,12 @@ export interface EstimateSettings {
     roofPitchDeg: number;
     roofPitchAtticDeg?: number; // sklon pri dome s podkrovím
     roofPitchBungalowDeg?: number; // sklon pri bungalove (štandard ES 22°)
+    roofPitchHipDeg?: number; // valbová strecha poschodového domu (typový projekt František 14: 23°)
   };
   /** Pevné štandardné založenie (VOTP: pásy z DT na pätke + doska). */
   standardFoundation: Foundation;
   /** Pevné štandardné otvory východiskového domu (katalóg ich neuvádza). */
-  standardOpenings: { windowSharePct: number; windowWidthM: number; windowHeightM: number; balconyPerM2: number; interiorDoorPerM2: number };
+  standardOpenings: { windowSharePct: number; windowWidthM: number; windowHeightM: number; balconyPerM2: number; balconyWidthM?: number; balconyHeightM?: number; interiorDoorPerM2: number };
   /** Popis štandardu po prvkoch (ľavý stĺpec) – upravuje admin. */
   standardText: Record<string, string>;
   standardSpec: Required<Omit<MaterialChoices, "floorInsulationThicknessM" | "roofInsulation2">> & { floorInsulationThicknessM: number; roofInsulation2?: string };

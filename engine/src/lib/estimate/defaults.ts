@@ -26,12 +26,14 @@ export const DEFAULT_ENGINE_SETTINGS: EstimateSettings = {
   chimneyInclVat: 5200,
   // prefarbené okná (farba zvonku, vnútri biele): +23,2 % k cene bieleho okna (25/120 vs. 25/112, 25/115, 25/130)
   windowColorSurcharge: 0.232,
-  defaults: { storeyHeightM: 2.95, kneeWallM: 1.0, roofOverhangM: 0.5, roofPitchDeg: 35, roofPitchBungalowDeg: 22, roofPitchAtticDeg: 40 },
+  defaults: { storeyHeightM: 2.95, kneeWallM: 1.0, roofOverhangM: 0.5, roofPitchDeg: 35, roofPitchBungalowDeg: 22, roofPitchAtticDeg: 40, roofPitchHipDeg: 23 },
   standardFoundation: {
     type: "pasy_dt", dtRows: 1, dtThicknessMm: 300, dtRowHeightMm: 250,
     stripWidthM: 0.5, stripDepthM: 0.65, slabThicknessM: 0.15, gravelThicknessM: 0.125,
   },
-  standardOpenings: { windowSharePct: 16, windowWidthM: 1.0, windowHeightM: 1.25, balconyPerM2: 60, interiorDoorPerM2: 13 },
+  // okná typového domu: dvojkrídle ≈ 1,5 × 1,45 m (typový projekt František 14: 1 600 × 1 450/1 500, 1 800 × 1 450; v rozpočtoch 78–87 % plochy
+  // okien sú dvojkrídle), balkónové dvere jedny dvojkrídle 1,8 × 2,25 m na každých ≈ 100 m² (František 14: D4 1 800 × 2 250)
+  standardOpenings: { windowSharePct: 16, windowWidthM: 1.5, windowHeightM: 1.45, balconyPerM2: 100, balconyWidthM: 1.8, balconyHeightM: 2.25, interiorDoorPerM2: 13 },
   standardText: {
     zalozenie: "Základové pásy š. 0,3 m – 1 rad debniacich tvárnic DT 300 na pätke š. 0,5 m (betón C16/20), hĺbka založenia 0,9 m. Základová doska 0,15 m C16/20, sieť 150/150/6 mm, 10–15 cm štrku.",
     murivo: "Presné murivo Ytong (pórobetón) 250 mm na tenkovrstvovú maltu.",

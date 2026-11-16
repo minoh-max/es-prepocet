@@ -243,7 +243,7 @@
         ${geo("storeyHeightM", "Konštrukčná výška podlažia", "m", "num", b.storeyHeightM, 2)}
         ${study.floorsType === "podkrovie" || b.floorsType === "podkrovie" ? geo("kneeWallM", "Nadmurovka", "m", "num", b.kneeWallM, 2) : null}
         ${geo("roofType", "Typ strechy", "", "roof")}
-        ${study.roofType !== "plocha" ? geo("roofPitchDeg", "Sklon strechy", "°", "num", b.roofPitchDeg ?? (E.defaultRoofPitch ? E.defaultRoofPitch(study.floorsType, ctx.settings.defaults) : study.floorsType === "podkrovie" ? ctx.settings.defaults.roofPitchAtticDeg : ctx.settings.defaults.roofPitchDeg), 0) : null}
+        ${study.roofType !== "plocha" ? geo("roofPitchDeg", "Sklon strechy", "°", "num", b.roofPitchDeg ?? (E.defaultRoofPitch ? E.defaultRoofPitch(study.floorsType, ctx.settings.defaults, study.roofType) : study.floorsType === "podkrovie" ? ctx.settings.defaults.roofPitchAtticDeg : ctx.settings.defaults.roofPitchDeg), 0) : null}
         ${note(!!(study.rooms && house.rooms && study.rooms !== house.rooms), "Počet izieb", house.rooms, study.rooms)}
         ${html`<${CRow} label="Počet izieb" std=${house.rooms || "–"} changed=${!!(study.rooms && house.rooms && study.rooms !== house.rooms)} c=${conf.rooms}><${NumInput} value=${study.rooms} onChange=${(v) => setS("rooms", v)} /><//>`}
         ${geo("garages", "Garážové státia", "ks", "num", b.garages || 0, 0)}
