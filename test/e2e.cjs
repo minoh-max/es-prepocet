@@ -48,6 +48,7 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.screenshot({ path: SHOTS + "/03_calc.png", fullPage: true });
     // nový prepočet so štúdiou
     await page.click(".topbar >> text=Nový prepočet"); await page.waitForTimeout(400);
+    await page.click("summary:has-text('Údaje projektu')").catch(() => {}); await page.fill("#pr-zakazka", "154/26"); await page.fill("#pr-parcela", "263"); await page.fill("#pr-projektant", "Ing. Test");
     await page.setInputFiles("input[type=file]", [path.join(ROOT, "test", "fixtures", "plan.png")]); await page.waitForTimeout(800);
     await page.click("text=Rozpoznať podklady"); await page.waitForSelector("text=Poznámka k podkladom", { timeout: 30000 }); await page.waitForTimeout(800);
     // východiskový dom musí obchodník potvrdiť – dovtedy sa odhad nedá vypočítať
@@ -62,8 +63,12 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.click("text=Uložiť prepočet"); await page.waitForTimeout(1000);
     const dl = page.waitForEvent("download", { timeout: 15000 });
     await page.click("text=Exportovať PDF"); const d = await dl; console.log("PDF:", d.suggestedFilename());
+    const pdfPath = path.join(SHOTS, "export.pdf"); await d.saveAs(pdfPath);
+    const pdfText = require("child_process").execSync(`pdftotext -layout "${pdfPath}" -`).toString();
+    if (!/154\/26/.test(pdfText) || !/Ing\. Test/.test(pdfText)) fail("v PDF chýba číslo zákazky alebo projektant");
     await page.click(".topbar >> text=Prepočty"); await page.waitForTimeout(1200);
     console.log("prepočty:", await page.$$eval("table.t tbody tr", (r) => r.length));
+    if (!/154\/26/.test(await page.textContent("table.t tbody"))) fail("v zozname prepočtov chýba číslo zákazky");
     const inp = await page.$("input.actual"); if (!inp) fail("chýba pole skutočná cena");
     await inp.fill("300000"); await inp.press("Enter"); await page.waitForTimeout(1200);
     await page.screenshot({ path: SHOTS + "/05_estimates.png", fullPage: true });

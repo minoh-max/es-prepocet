@@ -55,7 +55,8 @@
         const filled = fillDefaults(study, base ? ctx.housesById[base] : null);
         filled.outdoor = L.initOutdoor(filled, ctx.settings, r.merged.pripojky, r.merged.pripojkySrc);
         filled.extras = L.houseExtras(filled, ctx.settings);
-        upd({ ai: { pages: r.merged.pages, notes: r.merged.notes, notesList: r.merged.notesList, unreadable: r.merged.unreadable, checks: r.merged.checks, drawings: r.merged.drawings, houseName: r.merged.houseName, raw: r.raw }, study: filled, matches: matches.map((m) => ({ id: m.house.id, score: m.score, reasons: m.reasons })), baseHouseId: base, baseConfirmed: false, step: 2, aiMeta: { pagesRead: r.raw.length, pagesTotal: pages.length, errors: r.errors } });
+        const proj = { ...(r.merged.project || {}), ...Object.fromEntries(Object.entries(draft.project || {}).filter(([, v]) => v)) };
+        upd({ project: proj, ai: { pages: r.merged.pages, notes: r.merged.notes, notesList: r.merged.notesList, unreadable: r.merged.unreadable, checks: r.merged.checks, drawings: r.merged.drawings, houseName: r.merged.houseName, raw: r.raw }, study: filled, matches: matches.map((m) => ({ id: m.house.id, score: m.score, reasons: m.reasons })), baseHouseId: base, baseConfirmed: false, step: 2, aiMeta: { pagesRead: r.raw.length, pagesTotal: pages.length, errors: r.errors } });
         ctx.say(r.errors.length ? `Rozpoznané, ${r.errors.length} strán sa nepodarilo prečítať` : "Podklady sú rozpoznané – skontrolujte údaje");
       } catch (e) {
         const code = e && e.code;
@@ -77,6 +78,7 @@
           <h2 style="font-size:16px">Klient</h2>
           <div class="field"><label for="cn">Meno klienta alebo názov projektu</label><input id="cn" class="input" value=${draft.clientName} placeholder="napr. Novák – Žilina" onInput=${(e) => upd({ clientName: e.target.value })} /></div>
           <div class="field"><label for="cnote">Poznámka</label><textarea id="cnote" class="input" placeholder="Lokalita, požiadavky klienta…" onInput=${(e) => upd({ clientNote: e.target.value })}>${draft.clientNote}</textarea></div>
+          <details open=${!!(draft.project && Object.values(draft.project).some(Boolean))}><summary class="small" style="cursor:pointer;font-weight:600">Údaje projektu <span class="muted">(vyplní sa aj z razítok štúdie)</span></summary><div style="margin-top:10px"><${ProjectFields} draft=${draft} upd=${upd} /></div></details>
           <div class="field"><label>Cenová úroveň východiskového domu</label><${Seg} value=${draft.finish} options=${[["standard", "Štandard (na kľúč)"], ["holodom", "Holodom"]]} onChange=${(v) => upd({ finish: v })} /></div>
         </div>
         <div class=${"drop" + (over ? " over" : "")} onDragOver=${(e) => { e.preventDefault(); setOver(true); }} onDragLeave=${() => setOver(false)} onDrop=${(e) => { e.preventDefault(); setOver(false); addFiles(e.dataTransfer.files); }}>
@@ -309,6 +311,7 @@
     const diffs = house ? [...D, ...extraDiffs] : [];
     return html`
       ${draft.ai || house ? html`<${SourceNote} draft=${draft} conf=${conf} diffs=${diffs} hasHouse=${!!house} />` : null}
+      <div class="card"><div class="card-head"><div><h2>Údaje projektu</h2><div class="sub">Z rohových razítok a správy – skontrolujte a doplňte. Zobrazia sa v zozname prepočtov a v PDF.</div></div></div><div class="card-pad"><${ProjectFields} draft=${draft} upd=${upd} /></div></div>
       <div class="card">
         <div class="card-head"><div><h2>Východiskový dom</h2><div class="sub">${draft.ai && draft.ai.houseName ? `V podkladoch: „${draft.ai.houseName}“` : "Vyberte katalógový dom, z ktorého sa robí prepočet"}</div></div>
           <button class="btn tinted sm" onClick=${() => setPick(true)}>Zmeniť dom</button></div>
@@ -615,6 +618,14 @@
     </div>`;
   }
 
+
+  /** Údaje projektu (zákazka, manažér, projektant, pozemok, dátum štúdie) – vyplní ich AI z razítok a správy, obchodník ich môže prepísať. */
+  const PROJECT_FIELDS = [["zakazka", "Číslo zákazky", "napr. 154/26"], ["manazer", "Manažér projektu", ""], ["projektant", "Projektant", ""], ["katastralne", "Katastrálne územie", "napr. Sládkovičovo"], ["parcela", "Číslo parcely", "napr. 263"], ["datumStudie", "Dátum štúdie", "napr. 11/2026"]];
+  function ProjectFields({ draft, upd }) {
+    const pr = draft.project || {};
+    const set = (k, v) => upd({ project: { ...pr, [k]: v } });
+    return html`<div class="mini-grid" style="padding:0" id="project-fields">${PROJECT_FIELDS.map(([k, label, ph]) => html`<div class="field"><label for=${"pr-" + k}>${label}</label><input id=${"pr-" + k} class="input" value=${pr[k] || ""} placeholder=${ph} onInput=${(e) => set(k, e.target.value)} /></div>`)}</div>`;
+  }
   function HousePicker({ ctx, study, onPick }) {
     const [q, setQ] = useState("");
     const ranked = useMemo(() => L.findClosestHouses(study, ctx.houses, "", 8), [study]);
@@ -706,7 +717,7 @@
           files = [...files, ...up];
         }
         const doc = {
-          id: draft.id, ownerId: caps.uid, ownerName: ctx.profile?.name || caps.me?.name || "", clientName: draft.clientName || "", clientNote: draft.clientNote || "",
+          id: draft.id, ownerId: caps.uid, ownerName: ctx.profile?.name || caps.me?.name || "", clientName: draft.clientName || "", clientNote: draft.clientNote || "", project: L.clean(draft.project || {}),
           finish: draft.finish, baseHouseId: draft.baseHouseId, baseHouseName: house.name, files, aiSummary: summary || "",
           ai: draft.ai ? { pages: draft.ai.pages || [], notes: draft.ai.notes || "", notesList: draft.ai.notesList || [], unreadable: draft.ai.unreadable || [], checks: draft.ai.checks || [], drawings: draft.ai.drawings || [], houseName: draft.ai.houseName || "" } : null, variantSel: draft.variantSel || [],
           study: L.clone(draft.study), baseOverrides: L.clone(draft.baseOverrides || {}), matches: draft.matches || [],
@@ -877,7 +888,7 @@
         ${rows === null ? html`<div class="empty"><div class="spinner"></div></div>` : shown.length === 0 ? html`<div class="empty"><h3>Zatiaľ žiadne prepočty</h3><p>Začnite nahratím štúdie klienta.</p><button class="btn primary" onClick=${onNew}>Nový prepočet</button></div>` : html`<div class="table-wrap"><table class="t">
           <thead><tr><th>Klient</th><th>Východiskový dom</th><th class="num">Cena domu</th><th class="num">Odhad</th><th class="num">Zmena</th><th class="num">Skutočná cena</th><th class="num">Odchýlka</th><th>Obchodník</th><th>Dátum</th><th></th></tr></thead>
           <tbody>${shown.map((e) => html`<tr class="click" onClick=${() => onOpen(e)}>
-            <td><b>${e.clientName || "Bez mena"}</b>${e.clientNote ? html`<div class="faint small">${e.clientNote.slice(0, 60)}</div>` : null}</td>
+            <td><b>${e.clientName || "Bez mena"}</b>${e.project?.zakazka ? html` <span class="badge">${e.project.zakazka}</span>` : null}${e.project?.katastralne || e.project?.parcela ? html`<div class="faint small">${[e.project.katastralne, e.project.parcela && "p. č. " + e.project.parcela].filter(Boolean).join(", ")}</div>` : null}${e.clientNote ? html`<div class="faint small">${e.clientNote.slice(0, 60)}</div>` : null}</td>
             <td>${e.baseHouseName || "–"}</td>
             <td class="num">${fmtEur(e.summary?.basePrice)}</td>
             <td class="num"><b>${fmtEur(e.summary?.estimate)}</b></td>

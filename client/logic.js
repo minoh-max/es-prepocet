@@ -393,7 +393,7 @@
   // ---------- AI reading of the study: page by page, then deterministic merge ----------
   const OPENING_TYPES = ["okno", "balkonove", "hs", "vchodove", "vedlajsie", "vnutorne", "garazova", "stresne"];
 
-  const JSON_SHAPE = `{"razitko":{"stavba":null,"stupen":null,"vykres":null,"cisloVykresu":null,"mierka":null,"datum":null,"jednotkyKot":"mm"},
+  const JSON_SHAPE = `{"razitko":{"stavba":null,"stupen":null,"vykres":null,"cisloVykresu":null,"mierka":null,"datum":null,"jednotkyKot":"mm","zakazka":null,"manazerProjektu":null,"projektant":null,"katastralneUzemie":null,"parcela":null},
 "typStrany":"podorys","podlazie":"1.NP","nazovDomu":null,"pocetPodlazi":null,"typDomu":null,
 "plochy":{"uzitkovaCelkomM2":null,"uzitkovaPodlazia":[{"podlazie":"1.NP","m2":null}],"obytnaM2":null,"zastavanaM2":null,"garazM2":null},
 "vonkajsieRozmery":{"sirkaM":null,"dlzkaM":null},
@@ -415,7 +415,7 @@
   function rulesText(extrasCatalog) {
     const extras = (extrasCatalog || []).map((d) => `${d.key} = ${d.label} (${d.unit})`).join("; ");
     return `POSTUP (pri každom výkrese v tomto poradí):
-A. Rohové razítko: názov stavby, stupeň dokumentácie (štúdia, DSP, DRS, realizačný projekt), názov a číslo výkresu, mierka, dátum → "razitko". Text razítka býva aj otočený.
+A. Rohové razítko: názov stavby, stupeň dokumentácie (štúdia, DSP, DRS, realizačný projekt), názov a číslo výkresu, mierka, dátum → "razitko". Text razítka býva aj otočený. Do "razitko" zapíš aj číslo zákazky („č. zákazky“, „zák. číslo“, „zmluva č.“, napr. "154/26"), manažéra projektu, projektanta (vypracoval / zodpovedný projektant), katastrálne územie („k. ú.“) a číslo parcely („p. č.“, „parc. č.“, aj viac čísel) – rovnako aj z titulnej strany alebo správy.
 B. Mierka a jednotky: urči, či sú kóty v mm alebo m ("jednotkyKot"). Hlavné obvodové kóty ber ako referenčný rámec pre kontrolu všetkých vnútorných rozmerov.
 C. Konštrukcie a miestnosti: nosné steny, priečky, preklady, stĺpy; miestnosti s číslom a výmerou (m²).
 D. Výplne otvorov: označenie (O1, D2, …), kótovaná šírka, výška a výška parapetu.
@@ -691,9 +691,12 @@ ${JSON_SHAPE}`;
       for (const k of Array.isArray(r.kontroly) ? r.kontroly : []) if (k && k.co) checks.push({ text: k.co, ok: !/nesed/i.test(k.vysledok || ""), detail: k.detail || "", src: src(r) });
     }
     const drawings = R.filter((r) => r.razitko && (r.razitko.vykres || r.razitko.mierka)).map((r) => ({ src: src(r), vykres: r.razitko.vykres || "", cislo: r.razitko.cisloVykresu || "", mierka: r.razitko.mierka || "", stupen: r.razitko.stupen || "", datum: r.razitko.datum || "" }));
+    // údaje projektu z razítok a správy (prvá nájdená hodnota; správa má prednosť pred výkresmi)
+    const pick = (k) => { const v = first(ordered.map((r) => r.razitko && typeof r.razitko[k] === "string" ? r.razitko[k].trim() : null)); return v || undefined; };
+    const project = clean({ zakazka: pick("zakazka"), manazer: pick("manazerProjektu"), projektant: pick("projektant"), katastralne: pick("katastralneUzemie"), parcela: pick("parcela"), datumStudie: pick("datum") });
     const notes = notesList.join(" ");
     return {
-      houseName, notes, notesList, unreadable, checks, drawings, garageM2, pripojky: clean(pr), pripojkySrc: sit ? `situácia – ${sit.__file} str. ${sit.__page}` : Object.values(clean(pr)).length ? "technická správa" : "",
+      houseName, notes, notesList, unreadable, checks, drawings, project, garageM2, pripojky: clean(pr), pripojkySrc: sit ? `situácia – ${sit.__file} str. ${sit.__page}` : Object.values(clean(pr)).length ? "technická správa" : "",
       pages: R.map((r) => ({ file: r.__file, page: r.__pages || r.__page, type: r.typStrany, floor: r.podlazie })),
       study: clean({
         usableAreaM2: usable, builtAreaM2: built, widthM, lengthM, floorsType, roofType, roofPitchDeg: pitch, storeyHeightM: storey, kneeWallM: knee,
@@ -950,9 +953,9 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
       { text: `Prepočet štúdie rodinného domu z východiskového domu ${house.name}`, color: grey, margin: [0, 0, 0, 14] },
       {
         columns: [
-          { width: "*", table: { widths: ["auto", "*"], body: [kv("Klient", est.clientName || "–"), kv("Dátum", today), kv("Číslo prepočtu", (est.id || "").toUpperCase())] }, layout: "noBorders" },
+          { width: "*", table: { widths: ["auto", "*"], body: [kv("Klient", est.clientName || "–"), ...(est.project?.zakazka ? [kv("Číslo zákazky", est.project.zakazka)] : []), ...(est.project?.katastralne || est.project?.parcela ? [kv("Pozemok", [est.project.katastralne && "k. ú. " + est.project.katastralne, est.project.parcela && "p. č. " + est.project.parcela].filter(Boolean).join(", "))] : []), ...(est.project?.datumStudie ? [kv("Dátum štúdie", est.project.datumStudie)] : []), kv("Dátum", today), kv("Číslo prepočtu", (est.id || "").toUpperCase())] }, layout: "noBorders" },
           { width: 20, text: "" },
-          { width: "*", table: { widths: ["auto", "*"], body: [kv("Vypracoval", rep.name || "–"), kv("Telefón", rep.phone || "–"), kv("E-mail", rep.email || "–")] }, layout: "noBorders" },
+          { width: "*", table: { widths: ["auto", "*"], body: [kv("Vypracoval", rep.name || "–"), kv("Telefón", rep.phone || "–"), kv("E-mail", rep.email || "–"), ...(est.project?.manazer ? [kv("Manažér projektu", est.project.manazer)] : []), ...(est.project?.projektant ? [kv("Projektant", est.project.projektant)] : [])] }, layout: "noBorders" },
         ],
         margin: [0, 0, 0, 16],
       },

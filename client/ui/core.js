@@ -190,7 +190,7 @@
 
   function newDraft(house) {
     return {
-      id: L.uid(), clientName: "", clientNote: "", finish: "standard", baseHouseId: house ? house.id : null,
+      id: L.uid(), clientName: "", clientNote: "", project: {}, finish: "standard", baseHouseId: house ? house.id : null,
       files: [], pages: [], localFiles: [], ai: null, study: house ? { ...L.houseParams(house), materials: {}, materialTexts: {}, confidence: {}, evidence: {} } : null,
       baseOverrides: {}, status: "rozpracovaný", step: house ? 2 : 1, createdAt: Date.now(),
     };

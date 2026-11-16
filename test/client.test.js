@@ -64,3 +64,11 @@ test("čítanie výkresov: nečitateľné kóty a krížové kontroly sa zbieraj
   const prompt = L.pagePrompt ? L.pagePrompt({ file: "s.pdf", page: 1 }, ["celá strana"], []) : "";
   if (prompt) { assert.match(prompt, /NEHÁDAJ/); assert.match(prompt, /necitatelne/); assert.match(prompt, /razitko/); }
 });
+
+test("údaje projektu: číslo zákazky, manažér, projektant, k. ú., parcela a dátum sa zoberú z razítok (správa má prednosť)", () => {
+  const m = L.mergePages([
+    { __file: "s.pdf", __page: 2, typStrany: "podorys", razitko: { zakazka: "154/26", projektant: "Ing. A", parcela: "263", datum: "11/2026" } },
+    { __file: "sprava.pdf", __page: 1, typStrany: "technicka_sprava", razitko: { manazerProjektu: "Mgr. B", katastralneUzemie: "Sládkovičovo", projektant: "Ing. C" } },
+  ], []);
+  assert.deepEqual(m.project, { zakazka: "154/26", manazer: "Mgr. B", projektant: "Ing. C", katastralne: "Sládkovičovo", parcela: "263", datumStudie: "11/2026" });
+});
