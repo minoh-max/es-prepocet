@@ -809,6 +809,108 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     return r.text.trim();
   }
 
+  // ---------- AI kontrola prepočtu a zdôvodnenie zmeny ----------
+  // Upravené podľa promptov constructelligence-lab/construction-prompts (sekcia 02-estimating):
+  // 01 unit-rate-sanity-check + 02 takeoff-review-checklist → checkWithAI (interná kontrola, nejde do PDF)
+  // 03 change-order-pricing-narrative → narrativeWithAI (text pre klienta, ide do PDF)
+  const aiNum = (n, d = 2) => (n == null || !isFinite(n) ? "–" : fmtNum(n, Math.abs(n % 1) > 0 ? d : 0));
+  /** Fakty z výpočtu ako text pre AI: prvky s výmerami, jednotkovými cenami a nákladmi (bez DPH). */
+  function estimateFacts({ result, house, studyParams, baseParams, finish, notes, outdoor }) {
+    const side = (s) => `${aiNum(s.quantity, 1)} ${s.unit}${s.materialLabel ? ", " + s.materialLabel : ""}, náklad ${aiNum(s.cost, 0)} €`;
+    const lines = (s) => (s.lines || []).slice(0, 12).map((l) => `      - [${l.pathCode}] ${l.name}: ${aiNum(l.quantity)} ${l.unit} × ${aiNum(l.unitCost)} €/${l.unit} = ${aiNum(l.cost)} €${l.warning ? " (" + l.warning + ")" : ""}`).join("\n");
+    const els = result.elements.map((e) => {
+      const src = e.pricedBy === "firma" ? "cenník firmy (s DPH)" : e.pricedBy === "sadzba" ? "sadzba z nastavení" : "číselník";
+      return `- ${e.label} [${src}] vplyv ${fmtSigned(e.deltaInclVat)}
+    východiskový dom: ${side(e.base)}
+${lines(e.base)}
+    štúdia: ${side(e.study)}
+${lines(e.study)}${e.warnings && e.warnings.length ? "\n    upozornenia: " + e.warnings.join("; ") : ""}`;
+    }).join("\n");
+    const g = result.geometry || {};
+    const geo = (x) => x ? `obvod ${aiNum(x.perimeterM, 1)} m, fasáda čistá ${aiNum(x.facadeNetM2, 1)} m², okná ${aiNum(x.windowsAreaM2, 1)} m² (${x.windowsCount} ks), strecha ${aiNum(x.roofAreaM2, 1)} m², základy ${aiNum(x.foundationLengthM, 1)} m, priečky ${aiNum(x.partitionM2, 1)} m²` : "–";
+    const p = (x) => `úžitková ${aiNum(x.usableAreaM2, 1)} m², zastavaná ${aiNum(x.builtAreaM2, 1)} m², ${FLOORS_LABEL[x.floorsType] || x.floorsType || "–"}, strecha ${ROOF_LABEL[x.roofType] || x.roofType || "–"}, kúpeľne ${x.bathrooms ?? "–"}, WC ${x.wcs ?? "–"}, zdroj tepla ${HEAT_LABEL[x.heatingSource] || x.heatingSource || "–"}`;
+    const od = outdoor && outdoor.lines.length ? outdoor.lines.map((l) => `- ${l.label}: ${aiNum(l.quantity)} ${l.unit}${l.inclVat != null ? ", cenník firmy " + fmtEur(l.inclVat) + " s DPH" : ` × ${aiNum(l.unitCost)} € = ${aiNum(l.cost)} €`}${l.warning ? " (" + l.warning + ")" : ""}`).join("\n") + (outdoor.missing.length ? `\nChýba: ${outdoor.missing.join(", ")}` : "") : "";
+    const nl = (Array.isArray(notes) ? notes : notes ? [notes] : []).join(" ").slice(0, 4000);
+    return `Rodinný dom, prepočet štúdie klienta z katalógového domu ${house.name} (${finish === "holodom" ? "holodom" : "štandard ES"}).
+Východiskový dom: ${p(baseParams)}
+Štúdia klienta: ${p(studyParams)}
+Geometria východiskový: ${geo(g.base)}
+Geometria štúdia: ${geo(g.study)}
+Cena východiskového domu ${fmtEur(result.basePriceInclVat)} s DPH, odborný odhad ${fmtEur(result.estimateInclVat)} s DPH (${fmtPct(result.changePct)}), rozpätie ${fmtEur(result.range.lowInclVat)} – ${fmtEur(result.range.highInclVat)}.
+
+Prvky (náklady bez DPH a bez prirážky; vplyv je s prirážkou a DPH):
+${els}
+${result.warnings.length ? "\nUpozornenia výpočtu:\n" + result.warnings.map((w) => "- " + w).join("\n") : ""}
+${nl ? "\nPoznámky AI z čítania výkresov štúdie:\n" + nl : ""}
+${od ? "\nVonkajšie zariadenie a prípojky (samostatne, náklad bez DPH):\n" + od : ""}`;
+  }
+  const IMPACT = ["vysoky", "stredny", "nizky"];
+  const KINDS = ["vymera", "cena", "chyba", "vypocet"];
+  const aiStr = (v, max = 400) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, max);
+  function normCheck(j) {
+    const o = j && typeof j === "object" ? j : {};
+    const arr = (v) => (Array.isArray(v) ? v : []);
+    return {
+      findings: arr(o.nalezy).map((f) => ({
+        item: aiStr(f.polozka, 120), problem: aiStr(f.problem), why: aiStr(f.preco), check: aiStr(f.overit),
+        kind: KINDS.includes(f.typ) ? f.typ : "vymera", impact: IMPACT.includes(f.dopad) ? f.dopad : "stredny",
+      })).filter((f) => f.item || f.problem).slice(0, 20),
+      verifyFirst: arr(o.overitNajprv).map((v) => ({ figure: aiStr(v.cislo, 160), why: aiStr(v.preco) })).filter((v) => v.figure).slice(0, 3),
+      checklist: arr(o.kontrolyVymer).map((c) => ({ text: aiStr(c.kontrola), source: aiStr(c.zdroj, 120) })).filter((c) => c.text).slice(0, 15),
+      at: Date.now(),
+    };
+  }
+  /** Interná kontrola: vnútorná konzistencia výmer a cien + kontrolný zoznam výmer zo štúdie. */
+  async function checkWithAI(sample, data) {
+    const prompt = `KONTROLA PREPOČTU
+Si hlavný rozpočtár stavebnej firmy Ekonomické stavby (rodinné domy, Slovensko). Kontroluješ prepočet, ktorý pripravil obchodník: odborný odhad ceny domu podľa štúdie klienta. Výmery zo štúdie prečítala AI z výkresov, ceny sú z číselníka firmy.
+
+${estimateFacts(data)}
+
+Skontroluj IBA vnútornú konzistenciu. Nehodnoť, či sú ceny trhovo správne – to nevieš posúdiť. Nevymýšľaj trhové ceny ani nové čísla, pracuj len s údajmi vyššie.
+
+Zisti:
+1. Položky, kde výmera a jednotková cena k sebe nesedia (napr. nesprávna jednotka, výmera nezodpovedá ploche alebo geometrii domu, náklad nesedí s výmerou).
+2. Prvky alebo položky, ktoré pri tomto rozsahu a type domu pravdepodobne chýbajú, alebo sú započítané dvakrát.
+3. Kde je výpočet nekonzistentný medzi podobnými položkami (napr. iný pomer výmery k ploche ako pri východiskovom dome bez zjavného dôvodu).
+4. Tri čísla, ktoré má obchodník pred odoslaním overiť vo vlastných podkladoch.
+5. Kontrolný zoznam výmer prečítaných zo štúdie: revízia a aktuálnosť výkresov, typické dvojité započítanie, typicky chýbajúce časti pri tomto type domu, pravidlá merania, zaokrúhľovanie. Pri každej kontrole uveď, v ktorom podklade (výkres, rez, technická správa, výpis otvorov…) to overiť.
+
+Ak si niečím nie si istý, napíš to výslovne. Píš po slovensky, stručne a vecne.
+
+Vráť JSON v tvare:
+{"nalezy":[{"polozka":"názov prvku/položky","problem":"čo nesedí","preco":"prečo si to myslíš","overit":"čo konkrétne overiť","typ":"vymera|cena|chyba|vypocet","dopad":"vysoky|stredny|nizky"}],
+"overitNajprv":[{"cislo":"konkrétne číslo/výmera","preco":"prečo"}],
+"kontrolyVymer":[{"kontrola":"čo skontrolovať","zdroj":"kde v podkladoch"}]}
+Nálezy zoraď podľa toho, koľko peňazí môžu pohnúť. Ak nič nesedí zle, vráť prázdne pole nalezy.`;
+    return normCheck(await sample.json(prompt, { modelTier: "complex" }));
+  }
+  /** Zdôvodnenie zmeny ceny oproti východiskovému domu a štandardu ES – text pre klienta (do PDF). */
+  async function narrativeWithAI(sample, { result, house, finish, outdoor }) {
+    const drivers = result.topDrivers.map((d) => `- ${d.label}: ${fmtSigned(d.deltaInclVat)} (${d.explanation})`).join("\n");
+    const prompt = `Si obchodný manažér stavebnej firmy Ekonomické stavby. Napíš pre klienta sprievodný text k odbornému cenovému odhadu jeho rodinného domu: prečo a o koľko sa cena líši od katalógového domu ${house.name} v ${finish === "holodom" ? "stave holodom" : "štandarde ES"}.
+
+Údaje (použi IBA tieto čísla, nič nevymýšľaj):
+Cena katalógového domu ${house.name}: ${fmtEur(result.basePriceInclVat)} s DPH
+Odborný odhad podľa štúdie: ${fmtEur(result.estimateInclVat)} s DPH (${fmtSigned(result.changeInclVat)}, ${fmtPct(result.changePct)}), rozpätie ${fmtEur(result.range.lowInclVat)} – ${fmtEur(result.range.highInclVat)}
+Hlavné rozdiely:
+${drivers || "- bez podstatných rozdielov"}
+${Math.abs(result.otherDeltaInclVat) >= 1 ? `Ostatné drobné zmeny spolu: ${fmtSigned(result.otherDeltaInclVat)}` : ""}
+${result.warnings.length ? "Údaje na overenie:\n" + result.warnings.slice(0, 6).map((w) => "- " + w).join("\n") : ""}
+${outdoor && outdoor.missing && outdoor.missing.length ? `Pri vonkajšom zariadení chýba: ${outdoor.missing.join(", ")}` : ""}
+
+Napíš text v tomto poradí, každú časť ako samostatný krátky odsek bez nadpisov:
+1. Čo sa oproti katalógovému domu zmenilo a prečo – najviac tri vety, bez obviňovania.
+2. Ako bol odhad vypočítaný: cena katalógového domu a k nej rozdiely jednotlivých častí domu ocenené podľa cenníka firmy a štandardu ES, vrátane DPH 23 %.
+3. Hlavné rozdiely jednoduchými slovami, položku po položke, so sumou.
+4. Že ide o orientačný odhad v uvedenom rozpätí, nie záväznú ponuku.
+5. Čo od klienta potrebujeme, aby sme mohli pokračovať (napr. potvrdenie alebo doplnenie údajov, ak niečo chýba).
+
+Tón: vecný a pokojný, bez prídavných mien o férovosti či výhodnosti, bez marketingových fráz. Čitateľ je rozumný a má málo času. Najviac 250 slov. Po slovensky, oslovenie vykaním, bez odrážok a bez formátovania (žiadne **, #).`;
+    const r = await sample(prompt, { modelTier: "complex" });
+    return r.text.replace(/\*\*|^#+\s*/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
   // ---------- study summary (UI + PDF) ----------
   const OPENING_LABEL = { okno: "Okná", balkonove: "Balkónové / terasové dvere", hs: "HS portál (posuvný)", vchodove: "Vchodové dvere", vedlajsie: "Vedľajšie vonkajšie dvere", garazova: "Garážová brána", vnutorne: "Vnútorné dvere", stresne: "Strešné okná" };
   const FIXTURE_LABEL = { bathtub: "vaňa", cornerTub: "rohová vaňa", freestandingTub: "voľne stojaca vaňa", shower: "sprchový kút", showerDrain: "sprcha so žľabom", washbasins: "umývadlo", wc: "WC", wcWallHung: "závesné WC", bidet: "bidet" };
@@ -952,7 +1054,13 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         margin: [0, 0, 0, 16],
       },
     ];
-    if (est.aiSummary) content.splice(4, 0, { text: est.aiSummary, margin: [0, 0, 0, 14], lineHeight: 1.3 });
+    const narrative = String(est.aiNarrative || "").trim();
+    if (narrative && est.aiNarrativeInPdf !== false) {
+      content.push({ text: "Zdôvodnenie zmeny ceny", fontSize: 12, bold: true, margin: [0, 0, 0, 6] });
+      for (const para of narrative.split(/\n\s*\n/).map((x) => x.replace(/\s*\n\s*/g, " ").trim()).filter(Boolean)) content.push({ text: para, margin: [0, 0, 0, 6], lineHeight: 1.3 });
+      content.push({ text: "", margin: [0, 0, 0, 10] });
+    }
+    if (est.aiSummary) content.splice(4, 0,{ text: est.aiSummary, margin: [0, 0, 0, 14], lineHeight: 1.3 });
     if (result.optimizationNeeded && result.optimizations && result.optimizations.length) {
       content.push({ text: "Návrhy na optimalizáciu ceny", fontSize: 12, bold: true, margin: [0, 0, 0, 2] });
       content.push({ text: `Zmena ceny prekračuje ${fmtNum(result.thresholdPct ?? 10)} %. Tieto úpravy by cenu znížili (každá samostatne):`, color: grey, fontSize: 8, margin: [0, 0, 0, 6] });
@@ -1051,7 +1159,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     fmtNum, fmtEur, fmtSigned, fmtPct, fmtDate, parseNum, norm, uid, clone, clean,
     KIND, ROOF, FLOORS_LABEL, ROOF_LABEL, HEAT_LABEL, DIST_LABEL, houseUrl, houseParams, effectiveBase, findClosestHouses,
     buildPrices, parsePriceListXlsx, diffPriceLists, mergeSettings, extrasFrom,
-    ROLES, ROLE, roleItems, mapMaterial, processFile, readStudyWithAI, aiToStudy, mergePages, explainWithAI,
+    ROLES, ROLE, roleItems, mapMaterial, processFile, readStudyWithAI, aiToStudy, mergePages, explainWithAI, checkWithAI, narrativeWithAI, estimateFacts,
     layoutText, isTextPage, pagePrompt, textPrompt, OPENING_LABEL, OPENING_TYPES, FIXTURE_LABEL, FOUNDATION_LABEL, bathroomText, dtPieces, studySummary, groupNotes, initOutdoor, houseExtras,
     blobToDataUrl, buildPdfDoc, pdfBlob,
   };

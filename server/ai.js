@@ -21,6 +21,9 @@ function extractJson(text) {
 }
 
 function mockReply(prompt, json) {
+  if (json && /^KONTROLA PREPOČTU/.test(prompt)) {
+    return { nalezy: [{ polozka: "Strecha", problem: "Plocha strechy rastie rýchlejšie ako zastavaná plocha.", preco: "Pomer strecha / zastavaná plocha je vyšší ako pri východiskovom dome.", overit: "Sklon a presahy strechy v reze.", typ: "vymera", dopad: "vysoky" }], overitNajprv: [{ cislo: "Plocha strechy", preco: "Najväčší vplyv na cenu." }], kontrolyVymer: [{ kontrola: "Výkresy sú z poslednej revízie štúdie.", zdroj: "rohová pečiatka výkresov" }] };
+  }
   if (!json) return "Cena je vyššia hlavne kvôli tepelnému čerpadlu a väčším oknám.";
   if (/technick|správ/i.test(prompt) && !/podorys|pôdorys/i.test(prompt.slice(0, 400))) {
     return { typStrany: "technicka_sprava", nazovDomu: "Lucie 89", plochy: { uzitkovaCelkomM2: 131.5, zastavanaM2: 158 }, typDomu: "bungalov", strecha: { typ: "sedlova", sklon: 38 }, technika: { zdrojTepla: "tc", rozvodTepla: "podlahove" }, nadstandardy: [], poznamky: "Testovacia odpoveď (AI_MOCK)." };
