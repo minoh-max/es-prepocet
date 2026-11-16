@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Macaly_Cloud",
+      "mcp__Macaly_Cloud__*"
+    ]
+  }
+}
