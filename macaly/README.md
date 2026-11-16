@@ -10,3 +10,7 @@ Súbory, ktoré sa pridávajú do projektu Macaly (TanStack Start + Convex) navy
   `client/styles.css` (+ štýly prihlásenia) → `public/legacy/styles.css`, `public/data/` → `public/data/`.
 
 Prvý administrátor: premenné `ES_ADMIN_EMAIL`, `ES_ADMIN_PASSWORD` (dočasné heslo, pri prvom prihlásení sa mení).
+
+**Pozor:** od 15.11.2026 robí zmeny v projekte Macaly aj agent Macaly (bezpečnosť: číselník v `convex/data/ciselnik.ts`
+za prihlásením, limity AI, obmedzenie prihlásení, knižnice v `public/vendor/`). Aktuálna verzia pre Macaly je v projekte
+Macaly; tento priečinok je len pôvodný základ prenosu.
