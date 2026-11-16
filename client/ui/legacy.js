@@ -1085,7 +1085,7 @@
     const F = (k, label, ph) => html`<div class="group-row"><label class="lbl" for=${"c-" + k}>${label}</label><input id=${"c-" + k} class="input" value=${c[k] || ""} placeholder=${ph} onInput=${(e) => setC({ ...c, [k]: e.target.value })} /></div>`;
     return html`
       <div class="card card-pad row" style="gap:16px">
-        <div class="brand-mark" style="width:64px;height:64px;font-size:18px;border-radius:14px">${c.logoAssetId ? html`<img src=${"/_blob/" + c.logoAssetId} alt="Logo" />` : html`<svg viewBox="70 80 380 190" aria-hidden="true"><use href="#es-logo" /></svg>`}</div>
+        <div class="brand-mark" style="width:64px;height:64px;font-size:18px;border-radius:14px">${c.logoAssetId ? html`<img src=${"/_blob/" + c.logoAssetId} alt="Logo" />` : html`<svg viewBox="30 74 440 194" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><use href="#es-logo" /></svg>`}</div>
         <div class="grow"><b>Logo do PDF a aplikácie</b><div class="muted small">PNG alebo JPG, ideálne na bielom pozadí, šírka aspoň 600 px.</div></div>
         <input ref=${fileRef} type="file" accept="image/png,image/jpeg" hidden onChange=${(e) => { e.target.files[0] && uploadLogo(e.target.files[0]); e.target.value = ""; }} />
         <button class="btn tinted" disabled=${busy} onClick=${() => fileRef.current.click()}>${busy ? html`<span class="spinner"></span>` : null}Nahrať logo</button>

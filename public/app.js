@@ -1266,7 +1266,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     const go = (k) => { if (k === "new" && view !== "new") setDraft(draft || newDraft()); setView(k); };
     return html`<div class="shell">
       <header class="topbar">
-        <button class="brand" onClick=${() => go("new")} aria-label="ES Prepočet – nový prepočet">${logoUrl ? html`<img src=${logoUrl} alt="" />` : html`<svg viewBox="70 80 380 190" aria-hidden="true"><use href="#es-logo" /></svg>`}<span class="brand-name">Prepočet</span></button>
+        <button class="brand" onClick=${() => go("new")} aria-label="ES Prepočet – nový prepočet">${logoUrl ? html`<img src=${logoUrl} alt="" />` : html`<svg viewBox="30 74 440 194" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><use href="#es-logo" /></svg>`}<span class="brand-name">Prepočet</span></button>
         <nav class="nav" aria-label="Hlavná navigácia">
           ${nav.map(([k, l, i]) => html`<button class=${"nav-btn" + (k === "new" ? " cta" : "") + (view === k ? " active" : "")} aria-current=${view === k ? "page" : null} onClick=${() => go(k)}><${Icon} name=${i} /><span>${l}</span></button>`)}
         </nav>
@@ -2385,7 +2385,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     const F = (k, label, ph) => html`<div class="group-row"><label class="lbl" for=${"c-" + k}>${label}</label><input id=${"c-" + k} class="input" value=${c[k] || ""} placeholder=${ph} onInput=${(e) => setC({ ...c, [k]: e.target.value })} /></div>`;
     return html`
       <div class="card card-pad row" style="gap:16px">
-        <div class="brand-mark" style="width:64px;height:64px;font-size:18px;border-radius:14px">${c.logoAssetId ? html`<img src=${"/_blob/" + c.logoAssetId} alt="Logo" />` : html`<svg viewBox="70 80 380 190" aria-hidden="true"><use href="#es-logo" /></svg>`}</div>
+        <div class="brand-mark" style="width:64px;height:64px;font-size:18px;border-radius:14px">${c.logoAssetId ? html`<img src=${"/_blob/" + c.logoAssetId} alt="Logo" />` : html`<svg viewBox="30 74 440 194" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><use href="#es-logo" /></svg>`}</div>
         <div class="grow"><b>Logo do PDF a aplikácie</b><div class="muted small">PNG alebo JPG, ideálne na bielom pozadí, šírka aspoň 600 px.</div></div>
         <input ref=${fileRef} type="file" accept="image/png,image/jpeg" hidden onChange=${(e) => { e.target.files[0] && uploadLogo(e.target.files[0]); e.target.value = ""; }} />
         <button class="btn tinted" disabled=${busy} onClick=${() => fileRef.current.click()}>${busy ? html`<span class="spinner"></span>` : null}Nahrať logo</button>
