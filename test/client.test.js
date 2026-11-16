@@ -44,3 +44,11 @@ test("materiál bez hrúbky („YTONG KLASIK“): obvodové murivo nesmie skonč
   const m2 = L.mapMaterial(prices, "wall", "YTONG KLASIK P2-500 hr. 250 mm");
   assert.strictEqual(ctx.ESEngine.parseThicknessMm(prices[m2.path]), 250);
 });
+
+test("výber domu podľa názvu: „Blanka 3B“ v správe = katalógový „Blanka 3 B“, nie „Blanka 3“", () => {
+  const H = houses;
+  const m = L.findClosestHouses({ usableAreaM2: 86, builtAreaM2: 59.4, floorsType: "podkrovie", roofType: "sedlova" }, H, "typové riešenie Ekonomické stavby s.r.o. (dom Blanka 3B)", 3);
+  assert.equal(m[0].house.name, "Blanka 3 B");
+  const m2 = L.findClosestHouses({ usableAreaM2: 86, builtAreaM2: 59.4, floorsType: "podkrovie", roofType: "sedlova" }, H, "dom Blanka 35", 3);
+  assert.equal(m2[0].house.name, "Blanka 35");
+});

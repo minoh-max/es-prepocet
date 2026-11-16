@@ -73,7 +73,10 @@
       const byName = [];
       for (const h of houses) {
         const hn = norm(h.name).trim();
-        if (hn.length >= 4 && t.includes(hn)) byName.push({ h, len: hn.length });
+        if (hn.length < 4) continue;
+        // „Blanka 3B“ = „Blanka 3 B“ (medzery sa ignorujú), ale „Blanka 3“ sa nesmie chytiť v „Blanka 3B“ ani „Blanka 35“
+        const re = new RegExp("(^|[^0-9a-z])" + hn.split(/\s+/).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s_-]*") + "(?![0-9a-z])");
+        if (re.test(t)) byName.push({ h, len: hn.replace(/\s+/g, "").length });
       }
       byName.sort((a, b) => b.len - a.len);
       if (byName.length) {
@@ -702,7 +705,8 @@ ${JSON_SHAPE}`;
     const o = clean({
       waterM: pr.vodaM ?? fromExtras.waterM, sewerM: pr.kanalizaciaM ?? fromExtras.sewerM, rainM: pr.dazdovaM,
       gas, gasM: gas ? pr.plynM ?? fromExtras.gasM : undefined, elecM: pr.elektroM ?? fromExtras.elecM,
-      waterMeterPit: pr.vodomernaSachta === false ? "" : so.waterMeterPit,
+      // vlastná studňa: voda ide potrubím zo studne (prípojka ostáva), vodomerná šachta sa nerobí
+      waterMeterPit: pr.vodomernaSachta === false || ex.some((x) => x.key === "studna") ? "" : so.waterMeterPit,
       sewage: pr.odkanalizovanie || (cov ? "cov" : zumpa ? "zumpa" : so.sewage),
       revisionPits: pr.revizneSachty ?? so.revisionPits, pumpStation: pr.cerpaciaSachta ? settings.outdoorItems.pumpStation : undefined, elecPost: so.elecPost, gasPost: so.gasPost,
       terraceM2: pr.terasaM2, pavedM2: pr.spevnenePlochyM2 ?? fromExtras.pavedM2, dripPathM2: pr.okapovyChodnikM2,
