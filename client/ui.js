@@ -855,6 +855,70 @@
     return { result: r, house, baseParams: eb.params, studyParams: study, variants, outdoor, outdoorParams };
   }
 
+  // ---------- AI: zdôvodnenie zmeny ceny (do PDF) a interná kontrola prepočtu ----------
+  const stale = (saved, r) => saved && saved.estimate != null && Math.abs(saved.estimate - Math.round(r.estimateInclVat)) >= 1;
+  function NarrativeCard({ ctx, draft, upd, r, house, outdoor }) {
+    const caps = ctx.caps;
+    const [busy, setBusy] = useState(false);
+    const text = draft.aiNarrative || "";
+    const inPdf = draft.aiNarrativeInPdf !== false;
+    if (!text && !caps.sample) return null;
+    async function make() {
+      if (text && !confirm("Prepísať súčasný text novým návrhom od AI?")) return;
+      setBusy(true);
+      try {
+        const t = await L.narrativeWithAI(caps.sample, { result: r, house, finish: draft.finish, outdoor });
+        upd({ aiNarrative: t, aiNarrativeMeta: { estimate: Math.round(r.estimateInclVat), at: Date.now() } });
+      } catch (e) { ctx.say(e && e.message ? e.message : "Zdôvodnenie sa nepodarilo vytvoriť."); }
+      setBusy(false);
+    }
+    return html`<div class="card ai-narrative">
+      <div class="card-head"><div><h2>Zdôvodnenie zmeny ceny</h2><div class="sub">Vecný text pre klienta: čo sa zmenilo oproti domu ${house.name}, ako bol odhad vypočítaný a čo od klienta potrebujeme. Pred exportom ho môžete upraviť.</div></div>
+        ${caps.sample ? html`<button class="btn tinted sm" disabled=${busy} onClick=${make}>${busy ? html`<span class="spinner"></span>` : html`<${Icon} name="spark" />`}${text ? "Napísať znova" : "Napísať zdôvodnenie"}</button>` : null}</div>
+      ${text ? html`<div class="card-pad">
+        ${stale(draft.aiNarrativeMeta, r) ? html`<div class="notice" style="margin-bottom:10px"><div>Prepočet sa od napísania textu zmenil – skontrolujte sumy v texte alebo ho napíšte znova.</div></div>` : null}
+        <textarea id="ai-narrative" class="input" rows="10" style="width:100%;line-height:1.5" value=${text} onInput=${(e) => upd({ aiNarrative: e.target.value })}></textarea>
+        <label class="check" style="margin-top:8px"><input type="checkbox" checked=${inPdf} onChange=${() => upd({ aiNarrativeInPdf: !inPdf })} />Pridať do PDF pre klienta</label>
+      </div>` : null}
+    </div>`;
+  }
+  const IMPACT_UI = { vysoky: ["bad", "vysoký dopad"], stredny: ["warn", "stredný dopad"], nizky: ["", "nízky dopad"] };
+  const KIND_UI = { vymera: "výmera", cena: "cena", chyba: "chýba / 2×", vypocet: "výpočet" };
+  function AiCheckCard({ ctx, draft, upd, r, house, studyParams, baseParams, outdoor }) {
+    const caps = ctx.caps;
+    const [busy, setBusy] = useState(false);
+    const c = draft.aiCheck;
+    if (!c && !caps.sample) return null;
+    async function run() {
+      setBusy(true);
+      try {
+        const notes = draft.ai ? (draft.ai.notesList && draft.ai.notesList.length ? draft.ai.notesList : draft.ai.notes) : null;
+        const res = await L.checkWithAI(caps.sample, { result: r, house, studyParams, baseParams, finish: draft.finish, notes, outdoor });
+        upd({ aiCheck: { ...res, estimate: Math.round(r.estimateInclVat), done: [] } });
+      } catch (e) { ctx.say(e && e.message ? e.message : "Kontrolu sa nepodarilo spraviť."); }
+      setBusy(false);
+    }
+    const done = (c && c.done) || [];
+    const toggle = (i) => upd({ aiCheck: { ...c, done: done.includes(i) ? done.filter((x) => x !== i) : [...done, i] } });
+    return html`<div class="card ai-check">
+      <div class="card-head"><div><h2>Kontrola pred odoslaním</h2><div class="sub">AI skontroluje, či výmery a ceny k sebe sedia, čo môže chýbať a ktoré čísla overiť. Interná kontrola – do PDF nejde. Trhové ceny AI nepozná.</div></div>
+        ${caps.sample ? html`<button class="btn tinted sm" disabled=${busy} onClick=${run}>${busy ? html`<span class="spinner"></span>` : html`<${Icon} name="spark" />`}${c ? "Skontrolovať znova" : "Skontrolovať prepočet"}</button>` : null}</div>
+      ${c ? html`
+        ${stale(c, r) ? html`<div class="card-pad" style="padding-bottom:0"><div class="notice"><div>Prepočet sa od kontroly zmenil – spustite kontrolu znova.</div></div></div>` : null}
+        ${c.findings.length ? html`<div class="table-wrap"><table class="t dense">
+          <thead><tr><th>Položka</th><th>Čo nesedí</th><th>Prečo</th><th>Čo overiť</th></tr></thead>
+          <tbody>${c.findings.map((f) => html`<tr>
+            <td><b>${f.item}</b><div class="row" style="gap:4px;margin-top:4px;flex-wrap:wrap"><span class=${"badge " + IMPACT_UI[f.impact][0]}>${IMPACT_UI[f.impact][1]}</span><span class="badge">${KIND_UI[f.kind]}</span></div></td>
+            <td>${f.problem}</td><td class="muted small">${f.why}</td><td>${f.check}</td></tr>`)}</tbody>
+        </table></div>` : html`<div class="card-pad muted">AI nenašla nezrovnalosti medzi výmerami a cenami.</div>`}
+        ${c.verifyFirst.length ? html`<div class="card-pad" style="border-top:1px solid var(--line)"><b>Pred odoslaním overte vo vlastných podkladoch</b>
+          <ol style="margin:6px 0 0;padding-left:20px">${c.verifyFirst.map((v) => html`<li><b>${v.figure}</b>${v.why ? html` – <span class="muted">${v.why}</span>` : null}</li>`)}</ol></div>` : null}
+        ${c.checklist.length ? html`<div class="card-pad" style="border-top:1px solid var(--line)"><b>Kontrolný zoznam výmer zo štúdie</b> <span class="small muted">${done.length} / ${c.checklist.length}</span>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${c.checklist.map((k, i) => html`<label class="check" style="align-items:flex-start"><input type="checkbox" checked=${done.includes(i)} onChange=${() => toggle(i)} /><span>${k.text}${k.source ? html` <span class="small muted">· ${k.source}</span>` : null}</span></label>`)}</div></div>` : null}
+        <div class="card-pad small faint" style="border-top:1px solid var(--line)">Výsledok AI je pomôcka, nie meranie. Za výmery a ceny zodpovedá obchodník – každé číslo overte v podkladoch.</div>` : null}
+    </div>`;
+  }
+
   function StepResult({ ctx, draft, upd }) {
     const { result: r, house, baseParams, studyParams, variants, outdoor } = useMemo(() => computeFor(ctx, draft), [draft.study, draft.baseOverrides, draft.baseHouseId, draft.finish, draft.variantSel, ctx.prices, ctx.settings]);
     const toggleSel = (id) => { const cur = draft.variantSel || []; upd({ variantSel: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] }); };
@@ -882,6 +946,7 @@
           id: draft.id, ownerId: caps.uid, ownerName: ctx.profile?.name || caps.me?.name || "", clientName: draft.clientName || "", clientNote: draft.clientNote || "",
           finish: draft.finish, baseHouseId: draft.baseHouseId, baseHouseName: house.name, files, aiSummary: summary || "",
           ai: draft.ai ? { pages: draft.ai.pages || [], notes: draft.ai.notes || "", notesList: draft.ai.notesList || [], houseName: draft.ai.houseName || "" } : null, variantSel: draft.variantSel || [],
+          aiNarrative: draft.aiNarrative || "", aiNarrativeInPdf: draft.aiNarrativeInPdf !== false, aiNarrativeMeta: draft.aiNarrativeMeta || null, aiCheck: draft.aiCheck || null,
           study: L.clone(draft.study), baseOverrides: L.clone(draft.baseOverrides || {}), matches: draft.matches || [],
           summary: {
             basePrice: r.basePriceInclVat, estimate: r.estimateInclVat, estimateExclVat: r.estimateExclVat, change: r.changeInclVat, changePct: r.changePct, range: r.range,
@@ -969,6 +1034,8 @@
         </div>`)}</div>
       </div>` : null}
       <${OutdoorResultCard} outdoor=${outdoor} house=${r.estimateInclVat} onEdit=${() => upd({ step: 2 })} />
+      <${NarrativeCard} ctx=${ctx} draft=${draft} upd=${upd} r=${r} house=${house} outdoor=${outdoor} />
+      <${AiCheckCard} ctx=${ctx} draft=${draft} upd=${upd} r=${r} house=${house} studyParams=${studyParams} baseParams=${baseParams} outdoor=${outdoor} />
       <div class="row" style="justify-content:space-between">
         <button class="btn" onClick=${() => upd({ step: 2 })}><${Icon} name="back" />Upraviť údaje</button>
         <div class="row">

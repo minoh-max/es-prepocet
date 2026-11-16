@@ -809,6 +809,108 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     return r.text.trim();
   }
 
+  // ---------- AI kontrola prepočtu a zdôvodnenie zmeny ----------
+  // Upravené podľa promptov constructelligence-lab/construction-prompts (sekcia 02-estimating):
+  // 01 unit-rate-sanity-check + 02 takeoff-review-checklist → checkWithAI (interná kontrola, nejde do PDF)
+  // 03 change-order-pricing-narrative → narrativeWithAI (text pre klienta, ide do PDF)
+  const aiNum = (n, d = 2) => (n == null || !isFinite(n) ? "–" : fmtNum(n, Math.abs(n % 1) > 0 ? d : 0));
+  /** Fakty z výpočtu ako text pre AI: prvky s výmerami, jednotkovými cenami a nákladmi (bez DPH). */
+  function estimateFacts({ result, house, studyParams, baseParams, finish, notes, outdoor }) {
+    const side = (s) => `${aiNum(s.quantity, 1)} ${s.unit}${s.materialLabel ? ", " + s.materialLabel : ""}, náklad ${aiNum(s.cost, 0)} €`;
+    const lines = (s) => (s.lines || []).slice(0, 12).map((l) => `      - [${l.pathCode}] ${l.name}: ${aiNum(l.quantity)} ${l.unit} × ${aiNum(l.unitCost)} €/${l.unit} = ${aiNum(l.cost)} €${l.warning ? " (" + l.warning + ")" : ""}`).join("\n");
+    const els = result.elements.map((e) => {
+      const src = e.pricedBy === "firma" ? "cenník firmy (s DPH)" : e.pricedBy === "sadzba" ? "sadzba z nastavení" : "číselník";
+      return `- ${e.label} [${src}] vplyv ${fmtSigned(e.deltaInclVat)}
+    východiskový dom: ${side(e.base)}
+${lines(e.base)}
+    štúdia: ${side(e.study)}
+${lines(e.study)}${e.warnings && e.warnings.length ? "\n    upozornenia: " + e.warnings.join("; ") : ""}`;
+    }).join("\n");
+    const g = result.geometry || {};
+    const geo = (x) => x ? `obvod ${aiNum(x.perimeterM, 1)} m, fasáda čistá ${aiNum(x.facadeNetM2, 1)} m², okná ${aiNum(x.windowsAreaM2, 1)} m² (${x.windowsCount} ks), strecha ${aiNum(x.roofAreaM2, 1)} m², základy ${aiNum(x.foundationLengthM, 1)} m, priečky ${aiNum(x.partitionM2, 1)} m²` : "–";
+    const p = (x) => `úžitková ${aiNum(x.usableAreaM2, 1)} m², zastavaná ${aiNum(x.builtAreaM2, 1)} m², ${FLOORS_LABEL[x.floorsType] || x.floorsType || "–"}, strecha ${ROOF_LABEL[x.roofType] || x.roofType || "–"}, kúpeľne ${x.bathrooms ?? "–"}, WC ${x.wcs ?? "–"}, zdroj tepla ${HEAT_LABEL[x.heatingSource] || x.heatingSource || "–"}`;
+    const od = outdoor && outdoor.lines.length ? outdoor.lines.map((l) => `- ${l.label}: ${aiNum(l.quantity)} ${l.unit}${l.inclVat != null ? ", cenník firmy " + fmtEur(l.inclVat) + " s DPH" : ` × ${aiNum(l.unitCost)} € = ${aiNum(l.cost)} €`}${l.warning ? " (" + l.warning + ")" : ""}`).join("\n") + (outdoor.missing.length ? `\nChýba: ${outdoor.missing.join(", ")}` : "") : "";
+    const nl = (Array.isArray(notes) ? notes : notes ? [notes] : []).join(" ").slice(0, 4000);
+    return `Rodinný dom, prepočet štúdie klienta z katalógového domu ${house.name} (${finish === "holodom" ? "holodom" : "štandard ES"}).
+Východiskový dom: ${p(baseParams)}
+Štúdia klienta: ${p(studyParams)}
+Geometria východiskový: ${geo(g.base)}
+Geometria štúdia: ${geo(g.study)}
+Cena východiskového domu ${fmtEur(result.basePriceInclVat)} s DPH, odborný odhad ${fmtEur(result.estimateInclVat)} s DPH (${fmtPct(result.changePct)}), rozpätie ${fmtEur(result.range.lowInclVat)} – ${fmtEur(result.range.highInclVat)}.
+
+Prvky (náklady bez DPH a bez prirážky; vplyv je s prirážkou a DPH):
+${els}
+${result.warnings.length ? "\nUpozornenia výpočtu:\n" + result.warnings.map((w) => "- " + w).join("\n") : ""}
+${nl ? "\nPoznámky AI z čítania výkresov štúdie:\n" + nl : ""}
+${od ? "\nVonkajšie zariadenie a prípojky (samostatne, náklad bez DPH):\n" + od : ""}`;
+  }
+  const IMPACT = ["vysoky", "stredny", "nizky"];
+  const KINDS = ["vymera", "cena", "chyba", "vypocet"];
+  const aiStr = (v, max = 400) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, max);
+  function normCheck(j) {
+    const o = j && typeof j === "object" ? j : {};
+    const arr = (v) => (Array.isArray(v) ? v : []);
+    return {
+      findings: arr(o.nalezy).map((f) => ({
+        item: aiStr(f.polozka, 120), problem: aiStr(f.problem), why: aiStr(f.preco), check: aiStr(f.overit),
+        kind: KINDS.includes(f.typ) ? f.typ : "vymera", impact: IMPACT.includes(f.dopad) ? f.dopad : "stredny",
+      })).filter((f) => f.item || f.problem).slice(0, 20),
+      verifyFirst: arr(o.overitNajprv).map((v) => ({ figure: aiStr(v.cislo, 160), why: aiStr(v.preco) })).filter((v) => v.figure).slice(0, 3),
+      checklist: arr(o.kontrolyVymer).map((c) => ({ text: aiStr(c.kontrola), source: aiStr(c.zdroj, 120) })).filter((c) => c.text).slice(0, 15),
+      at: Date.now(),
+    };
+  }
+  /** Interná kontrola: vnútorná konzistencia výmer a cien + kontrolný zoznam výmer zo štúdie. */
+  async function checkWithAI(sample, data) {
+    const prompt = `KONTROLA PREPOČTU
+Si hlavný rozpočtár stavebnej firmy Ekonomické stavby (rodinné domy, Slovensko). Kontroluješ prepočet, ktorý pripravil obchodník: odborný odhad ceny domu podľa štúdie klienta. Výmery zo štúdie prečítala AI z výkresov, ceny sú z číselníka firmy.
+
+${estimateFacts(data)}
+
+Skontroluj IBA vnútornú konzistenciu. Nehodnoť, či sú ceny trhovo správne – to nevieš posúdiť. Nevymýšľaj trhové ceny ani nové čísla, pracuj len s údajmi vyššie.
+
+Zisti:
+1. Položky, kde výmera a jednotková cena k sebe nesedia (napr. nesprávna jednotka, výmera nezodpovedá ploche alebo geometrii domu, náklad nesedí s výmerou).
+2. Prvky alebo položky, ktoré pri tomto rozsahu a type domu pravdepodobne chýbajú, alebo sú započítané dvakrát.
+3. Kde je výpočet nekonzistentný medzi podobnými položkami (napr. iný pomer výmery k ploche ako pri východiskovom dome bez zjavného dôvodu).
+4. Tri čísla, ktoré má obchodník pred odoslaním overiť vo vlastných podkladoch.
+5. Kontrolný zoznam výmer prečítaných zo štúdie: revízia a aktuálnosť výkresov, typické dvojité započítanie, typicky chýbajúce časti pri tomto type domu, pravidlá merania, zaokrúhľovanie. Pri každej kontrole uveď, v ktorom podklade (výkres, rez, technická správa, výpis otvorov…) to overiť.
+
+Ak si niečím nie si istý, napíš to výslovne. Píš po slovensky, stručne a vecne.
+
+Vráť JSON v tvare:
+{"nalezy":[{"polozka":"názov prvku/položky","problem":"čo nesedí","preco":"prečo si to myslíš","overit":"čo konkrétne overiť","typ":"vymera|cena|chyba|vypocet","dopad":"vysoky|stredny|nizky"}],
+"overitNajprv":[{"cislo":"konkrétne číslo/výmera","preco":"prečo"}],
+"kontrolyVymer":[{"kontrola":"čo skontrolovať","zdroj":"kde v podkladoch"}]}
+Nálezy zoraď podľa toho, koľko peňazí môžu pohnúť. Ak nič nesedí zle, vráť prázdne pole nalezy.`;
+    return normCheck(await sample.json(prompt, { modelTier: "complex" }));
+  }
+  /** Zdôvodnenie zmeny ceny oproti východiskovému domu a štandardu ES – text pre klienta (do PDF). */
+  async function narrativeWithAI(sample, { result, house, finish, outdoor }) {
+    const drivers = result.topDrivers.map((d) => `- ${d.label}: ${fmtSigned(d.deltaInclVat)} (${d.explanation})`).join("\n");
+    const prompt = `Si obchodný manažér stavebnej firmy Ekonomické stavby. Napíš pre klienta sprievodný text k odbornému cenovému odhadu jeho rodinného domu: prečo a o koľko sa cena líši od katalógového domu ${house.name} v ${finish === "holodom" ? "stave holodom" : "štandarde ES"}.
+
+Údaje (použi IBA tieto čísla, nič nevymýšľaj):
+Cena katalógového domu ${house.name}: ${fmtEur(result.basePriceInclVat)} s DPH
+Odborný odhad podľa štúdie: ${fmtEur(result.estimateInclVat)} s DPH (${fmtSigned(result.changeInclVat)}, ${fmtPct(result.changePct)}), rozpätie ${fmtEur(result.range.lowInclVat)} – ${fmtEur(result.range.highInclVat)}
+Hlavné rozdiely:
+${drivers || "- bez podstatných rozdielov"}
+${Math.abs(result.otherDeltaInclVat) >= 1 ? `Ostatné drobné zmeny spolu: ${fmtSigned(result.otherDeltaInclVat)}` : ""}
+${result.warnings.length ? "Údaje na overenie:\n" + result.warnings.slice(0, 6).map((w) => "- " + w).join("\n") : ""}
+${outdoor && outdoor.missing && outdoor.missing.length ? `Pri vonkajšom zariadení chýba: ${outdoor.missing.join(", ")}` : ""}
+
+Napíš text v tomto poradí, každú časť ako samostatný krátky odsek bez nadpisov:
+1. Čo sa oproti katalógovému domu zmenilo a prečo – najviac tri vety, bez obviňovania.
+2. Ako bol odhad vypočítaný: cena katalógového domu a k nej rozdiely jednotlivých častí domu ocenené podľa cenníka firmy a štandardu ES, vrátane DPH 23 %.
+3. Hlavné rozdiely jednoduchými slovami, položku po položke, so sumou.
+4. Že ide o orientačný odhad v uvedenom rozpätí, nie záväznú ponuku.
+5. Čo od klienta potrebujeme, aby sme mohli pokračovať (napr. potvrdenie alebo doplnenie údajov, ak niečo chýba).
+
+Tón: vecný a pokojný, bez prídavných mien o férovosti či výhodnosti, bez marketingových fráz. Čitateľ je rozumný a má málo času. Najviac 250 slov. Po slovensky, oslovenie vykaním, bez odrážok a bez formátovania (žiadne **, #).`;
+    const r = await sample(prompt, { modelTier: "complex" });
+    return r.text.replace(/\*\*|^#+\s*/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
   // ---------- study summary (UI + PDF) ----------
   const OPENING_LABEL = { okno: "Okná", balkonove: "Balkónové / terasové dvere", hs: "HS portál (posuvný)", vchodove: "Vchodové dvere", vedlajsie: "Vedľajšie vonkajšie dvere", garazova: "Garážová brána", vnutorne: "Vnútorné dvere", stresne: "Strešné okná" };
   const FIXTURE_LABEL = { bathtub: "vaňa", cornerTub: "rohová vaňa", freestandingTub: "voľne stojaca vaňa", shower: "sprchový kút", showerDrain: "sprcha so žľabom", washbasins: "umývadlo", wc: "WC", wcWallHung: "závesné WC", bidet: "bidet" };
@@ -952,7 +1054,13 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         margin: [0, 0, 0, 16],
       },
     ];
-    if (est.aiSummary) content.splice(4, 0, { text: est.aiSummary, margin: [0, 0, 0, 14], lineHeight: 1.3 });
+    const narrative = String(est.aiNarrative || "").trim();
+    if (narrative && est.aiNarrativeInPdf !== false) {
+      content.push({ text: "Zdôvodnenie zmeny ceny", fontSize: 12, bold: true, margin: [0, 0, 0, 6] });
+      for (const para of narrative.split(/\n\s*\n/).map((x) => x.replace(/\s*\n\s*/g, " ").trim()).filter(Boolean)) content.push({ text: para, margin: [0, 0, 0, 6], lineHeight: 1.3 });
+      content.push({ text: "", margin: [0, 0, 0, 10] });
+    }
+    if (est.aiSummary) content.splice(4, 0,{ text: est.aiSummary, margin: [0, 0, 0, 14], lineHeight: 1.3 });
     if (result.optimizationNeeded && result.optimizations && result.optimizations.length) {
       content.push({ text: "Návrhy na optimalizáciu ceny", fontSize: 12, bold: true, margin: [0, 0, 0, 2] });
       content.push({ text: `Zmena ceny prekračuje ${fmtNum(result.thresholdPct ?? 10)} %. Tieto úpravy by cenu znížili (každá samostatne):`, color: grey, fontSize: 8, margin: [0, 0, 0, 6] });
@@ -1051,7 +1159,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     fmtNum, fmtEur, fmtSigned, fmtPct, fmtDate, parseNum, norm, uid, clone, clean,
     KIND, ROOF, FLOORS_LABEL, ROOF_LABEL, HEAT_LABEL, DIST_LABEL, houseUrl, houseParams, effectiveBase, findClosestHouses,
     buildPrices, parsePriceListXlsx, diffPriceLists, mergeSettings, extrasFrom,
-    ROLES, ROLE, roleItems, mapMaterial, processFile, readStudyWithAI, aiToStudy, mergePages, explainWithAI,
+    ROLES, ROLE, roleItems, mapMaterial, processFile, readStudyWithAI, aiToStudy, mergePages, explainWithAI, checkWithAI, narrativeWithAI, estimateFacts,
     layoutText, isTextPage, pagePrompt, textPrompt, OPENING_LABEL, OPENING_TYPES, FIXTURE_LABEL, FOUNDATION_LABEL, bathroomText, dtPieces, studySummary, groupNotes, initOutdoor, houseExtras,
     blobToDataUrl, buildPdfDoc, pdfBlob,
   };
@@ -1913,6 +2021,70 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     return { result: r, house, baseParams: eb.params, studyParams: study, variants, outdoor, outdoorParams };
   }
 
+  // ---------- AI: zdôvodnenie zmeny ceny (do PDF) a interná kontrola prepočtu ----------
+  const stale = (saved, r) => saved && saved.estimate != null && Math.abs(saved.estimate - Math.round(r.estimateInclVat)) >= 1;
+  function NarrativeCard({ ctx, draft, upd, r, house, outdoor }) {
+    const caps = ctx.caps;
+    const [busy, setBusy] = useState(false);
+    const text = draft.aiNarrative || "";
+    const inPdf = draft.aiNarrativeInPdf !== false;
+    if (!text && !caps.sample) return null;
+    async function make() {
+      if (text && !confirm("Prepísať súčasný text novým návrhom od AI?")) return;
+      setBusy(true);
+      try {
+        const t = await L.narrativeWithAI(caps.sample, { result: r, house, finish: draft.finish, outdoor });
+        upd({ aiNarrative: t, aiNarrativeMeta: { estimate: Math.round(r.estimateInclVat), at: Date.now() } });
+      } catch (e) { ctx.say(e && e.message ? e.message : "Zdôvodnenie sa nepodarilo vytvoriť."); }
+      setBusy(false);
+    }
+    return html`<div class="card ai-narrative">
+      <div class="card-head"><div><h2>Zdôvodnenie zmeny ceny</h2><div class="sub">Vecný text pre klienta: čo sa zmenilo oproti domu ${house.name}, ako bol odhad vypočítaný a čo od klienta potrebujeme. Pred exportom ho môžete upraviť.</div></div>
+        ${caps.sample ? html`<button class="btn tinted sm" disabled=${busy} onClick=${make}>${busy ? html`<span class="spinner"></span>` : html`<${Icon} name="spark" />`}${text ? "Napísať znova" : "Napísať zdôvodnenie"}</button>` : null}</div>
+      ${text ? html`<div class="card-pad">
+        ${stale(draft.aiNarrativeMeta, r) ? html`<div class="notice" style="margin-bottom:10px"><div>Prepočet sa od napísania textu zmenil – skontrolujte sumy v texte alebo ho napíšte znova.</div></div>` : null}
+        <textarea id="ai-narrative" class="input" rows="10" style="width:100%;line-height:1.5" value=${text} onInput=${(e) => upd({ aiNarrative: e.target.value })}></textarea>
+        <label class="check" style="margin-top:8px"><input type="checkbox" checked=${inPdf} onChange=${() => upd({ aiNarrativeInPdf: !inPdf })} />Pridať do PDF pre klienta</label>
+      </div>` : null}
+    </div>`;
+  }
+  const IMPACT_UI = { vysoky: ["bad", "vysoký dopad"], stredny: ["warn", "stredný dopad"], nizky: ["", "nízky dopad"] };
+  const KIND_UI = { vymera: "výmera", cena: "cena", chyba: "chýba / 2×", vypocet: "výpočet" };
+  function AiCheckCard({ ctx, draft, upd, r, house, studyParams, baseParams, outdoor }) {
+    const caps = ctx.caps;
+    const [busy, setBusy] = useState(false);
+    const c = draft.aiCheck;
+    if (!c && !caps.sample) return null;
+    async function run() {
+      setBusy(true);
+      try {
+        const notes = draft.ai ? (draft.ai.notesList && draft.ai.notesList.length ? draft.ai.notesList : draft.ai.notes) : null;
+        const res = await L.checkWithAI(caps.sample, { result: r, house, studyParams, baseParams, finish: draft.finish, notes, outdoor });
+        upd({ aiCheck: { ...res, estimate: Math.round(r.estimateInclVat), done: [] } });
+      } catch (e) { ctx.say(e && e.message ? e.message : "Kontrolu sa nepodarilo spraviť."); }
+      setBusy(false);
+    }
+    const done = (c && c.done) || [];
+    const toggle = (i) => upd({ aiCheck: { ...c, done: done.includes(i) ? done.filter((x) => x !== i) : [...done, i] } });
+    return html`<div class="card ai-check">
+      <div class="card-head"><div><h2>Kontrola pred odoslaním</h2><div class="sub">AI skontroluje, či výmery a ceny k sebe sedia, čo môže chýbať a ktoré čísla overiť. Interná kontrola – do PDF nejde. Trhové ceny AI nepozná.</div></div>
+        ${caps.sample ? html`<button class="btn tinted sm" disabled=${busy} onClick=${run}>${busy ? html`<span class="spinner"></span>` : html`<${Icon} name="spark" />`}${c ? "Skontrolovať znova" : "Skontrolovať prepočet"}</button>` : null}</div>
+      ${c ? html`
+        ${stale(c, r) ? html`<div class="card-pad" style="padding-bottom:0"><div class="notice"><div>Prepočet sa od kontroly zmenil – spustite kontrolu znova.</div></div></div>` : null}
+        ${c.findings.length ? html`<div class="table-wrap"><table class="t dense">
+          <thead><tr><th>Položka</th><th>Čo nesedí</th><th>Prečo</th><th>Čo overiť</th></tr></thead>
+          <tbody>${c.findings.map((f) => html`<tr>
+            <td><b>${f.item}</b><div class="row" style="gap:4px;margin-top:4px;flex-wrap:wrap"><span class=${"badge " + IMPACT_UI[f.impact][0]}>${IMPACT_UI[f.impact][1]}</span><span class="badge">${KIND_UI[f.kind]}</span></div></td>
+            <td>${f.problem}</td><td class="muted small">${f.why}</td><td>${f.check}</td></tr>`)}</tbody>
+        </table></div>` : html`<div class="card-pad muted">AI nenašla nezrovnalosti medzi výmerami a cenami.</div>`}
+        ${c.verifyFirst.length ? html`<div class="card-pad" style="border-top:1px solid var(--line)"><b>Pred odoslaním overte vo vlastných podkladoch</b>
+          <ol style="margin:6px 0 0;padding-left:20px">${c.verifyFirst.map((v) => html`<li><b>${v.figure}</b>${v.why ? html` – <span class="muted">${v.why}</span>` : null}</li>`)}</ol></div>` : null}
+        ${c.checklist.length ? html`<div class="card-pad" style="border-top:1px solid var(--line)"><b>Kontrolný zoznam výmer zo štúdie</b> <span class="small muted">${done.length} / ${c.checklist.length}</span>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${c.checklist.map((k, i) => html`<label class="check" style="align-items:flex-start"><input type="checkbox" checked=${done.includes(i)} onChange=${() => toggle(i)} /><span>${k.text}${k.source ? html` <span class="small muted">· ${k.source}</span>` : null}</span></label>`)}</div></div>` : null}
+        <div class="card-pad small faint" style="border-top:1px solid var(--line)">Výsledok AI je pomôcka, nie meranie. Za výmery a ceny zodpovedá obchodník – každé číslo overte v podkladoch.</div>` : null}
+    </div>`;
+  }
+
   function StepResult({ ctx, draft, upd }) {
     const { result: r, house, baseParams, studyParams, variants, outdoor } = useMemo(() => computeFor(ctx, draft), [draft.study, draft.baseOverrides, draft.baseHouseId, draft.finish, draft.variantSel, ctx.prices, ctx.settings]);
     const toggleSel = (id) => { const cur = draft.variantSel || []; upd({ variantSel: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] }); };
@@ -1940,6 +2112,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
           id: draft.id, ownerId: caps.uid, ownerName: ctx.profile?.name || caps.me?.name || "", clientName: draft.clientName || "", clientNote: draft.clientNote || "",
           finish: draft.finish, baseHouseId: draft.baseHouseId, baseHouseName: house.name, files, aiSummary: summary || "",
           ai: draft.ai ? { pages: draft.ai.pages || [], notes: draft.ai.notes || "", notesList: draft.ai.notesList || [], houseName: draft.ai.houseName || "" } : null, variantSel: draft.variantSel || [],
+          aiNarrative: draft.aiNarrative || "", aiNarrativeInPdf: draft.aiNarrativeInPdf !== false, aiNarrativeMeta: draft.aiNarrativeMeta || null, aiCheck: draft.aiCheck || null,
           study: L.clone(draft.study), baseOverrides: L.clone(draft.baseOverrides || {}), matches: draft.matches || [],
           summary: {
             basePrice: r.basePriceInclVat, estimate: r.estimateInclVat, estimateExclVat: r.estimateExclVat, change: r.changeInclVat, changePct: r.changePct, range: r.range,
@@ -2027,6 +2200,8 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         </div>`)}</div>
       </div>` : null}
       <${OutdoorResultCard} outdoor=${outdoor} house=${r.estimateInclVat} onEdit=${() => upd({ step: 2 })} />
+      <${NarrativeCard} ctx=${ctx} draft=${draft} upd=${upd} r=${r} house=${house} outdoor=${outdoor} />
+      <${AiCheckCard} ctx=${ctx} draft=${draft} upd=${upd} r=${r} house=${house} studyParams=${studyParams} baseParams=${baseParams} outdoor=${outdoor} />
       <div class="row" style="justify-content:space-between">
         <button class="btn" onClick=${() => upd({ step: 2 })}><${Icon} name="back" />Upraviť údaje</button>
         <div class="row">

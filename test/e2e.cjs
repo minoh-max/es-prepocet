@@ -48,11 +48,23 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.screenshot({ path: SHOTS + "/04_result.png" });
     const est = await page.textContent(".kpi.hero .kpi-value"); console.log("odhad:", est);
     await page.fill("#client-name", "Test klient").catch(() => {});
+    // AI: zdôvodnenie zmeny ceny (do PDF) a interná kontrola prepočtu
+    await page.click("button:has-text(\"Napísať zdôvodnenie\")"); await page.waitForSelector("#ai-narrative", { timeout: 30000 });
+    if (!(await page.inputValue("#ai-narrative")).trim()) fail("prázdne zdôvodnenie");
+    await page.fill("#ai-narrative", "Upravený text zdôvodnenia pre klienta.");
+    await page.click("button:has-text(\"Skontrolovať prepočet\")"); await page.waitForSelector("text=Kontrolný zoznam výmer zo štúdie", { timeout: 30000 });
+    console.log("AI kontrola nálezy:", await page.$$eval(".ai-check table.t tbody tr", (r) => r.length));
+    await page.click(".ai-check label.check"); 
+    await page.screenshot({ path: SHOTS + "/04b_ai.png", fullPage: true });
     await page.click("text=Uložiť prepočet"); await page.waitForTimeout(1000);
     const dl = page.waitForEvent("download", { timeout: 15000 });
     await page.click("text=Exportovať PDF"); const d = await dl; console.log("PDF:", d.suggestedFilename());
     await page.click(".sidebar >> text=Prepočty"); await page.waitForTimeout(1200);
     console.log("prepočty:", await page.$$eval("table.t tbody tr", (r) => r.length));
+    await page.click("table.t tbody tr >> nth=0"); await page.waitForSelector("#ai-narrative", { timeout: 10000 });
+    if ((await page.inputValue("#ai-narrative")) !== "Upravený text zdôvodnenia pre klienta.") fail("zdôvodnenie sa neuložilo");
+    if (!(await page.isChecked(".ai-check label.check input"))) fail("kontrolný zoznam sa neuložil");
+    await page.click(".sidebar >> text=Prepočty"); await page.waitForTimeout(1200);
     const inp = await page.$("input.actual"); if (!inp) fail("chýba pole skutočná cena");
     await inp.fill("300000"); await inp.press("Enter"); await page.waitForTimeout(1200);
     await page.screenshot({ path: SHOTS + "/05_estimates.png", fullPage: true });
