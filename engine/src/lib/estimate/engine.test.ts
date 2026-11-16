@@ -50,6 +50,16 @@ describe("estimate engine", () => {
     expect(r.topDrivers).toHaveLength(0);
   });
 
+  it("krb si dodáva klient: účtuje sa len komín, krb sa uvedie ako mimo dodávky ES", () => {
+    const chimneyOnly = computeEstimate(input({ ...base, chimney: true }));
+    const withFireplace = computeEstimate(input({ ...base, chimney: true, fireplace: true }));
+    expect(chimneyOnly.estimateInclVat).toBe(287000 + 2897);
+    expect(withFireplace.estimateInclVat).toBe(chimneyOnly.estimateInclVat);
+    const el = withFireplace.elements.find((e) => e.key === "komin_krb")!;
+    expect(el.study.materialLabel).toMatch(/krb – dodáva klient/);
+    expect(withFireplace.optimizations.some((o) => o.id === "tech-krb")).toBe(false);
+  });
+
   it("adds company prices (incl. VAT) without markup", () => {
     const r = computeEstimate(input({ ...base, heatingSource: "tc" }));
     expect(r.changeInclVat).toBe(8940);

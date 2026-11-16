@@ -367,7 +367,7 @@ function optimize(input: EstimateInput, current: Core): OptimizationSuggestion[]
     push("tech-reku", "technologia", "Decentrálna rekuperácia namiesto centrálnej",
       "Štandardné riešenie bez rozvodov vzduchotechniky.", { set: { centralRecuperation: false } });
   }
-  if (input.study.fireplace) {
+  if (input.study.fireplace && input.settings.fireplaceByClient === false) {
     push("tech-krb", "technologia", "Bez krbu (príprava na neskoršiu montáž)", "Krb je možné doplniť po kolaudácii.", { set: { fireplace: false } });
   }
 

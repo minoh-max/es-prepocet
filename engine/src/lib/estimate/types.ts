@@ -192,6 +192,7 @@ export interface UnitRates {
 
 export interface EstimateSettings {
   vatRate: number; // 0.23
+  fireplaceByClient?: boolean; // krb si dodáva klient (predvolene áno) – účtuje sa len komín
   markup: number; // prirážka na položky mimo hrubej stavby (presun hmôt, GZS, zisk a réžia)
   markupShell?: number; // prirážka na hrubú uzatvorenú stavbu (paušál HUS)
   optimizationThresholdPct: number; // 10

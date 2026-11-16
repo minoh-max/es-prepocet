@@ -426,9 +426,10 @@ export const ELEMENTS: ElementDef[] = [
     key: "komin_krb", label: "Komín a krb", group: "Vybavenie", pricedBy: "firma", inHolodom: true,
     compute: (c) => ({
       quantity: (c.p.chimney ? 1 : 0) + (c.p.fireplace ? 1 : 0), unit: "ks",
-      materialLabel: [c.p.chimney ? "komín" : "", c.p.fireplace ? "krb" : ""].filter(Boolean).join(" + ") || "bez komína",
+      materialLabel: [c.p.chimney ? "komín" : "", c.p.fireplace ? (c.s.fireplaceByClient !== false ? "krb – dodáva klient" : "krb") : ""].filter(Boolean).join(" + ") || "bez komína",
       lines: [],
-      companyCostInclVat: (c.p.chimney ? c.extras.chimney ?? 0 : 0) + (c.p.fireplace ? c.extras.fireplace ?? 0 : 0),
+      // krb (kachle, vložku) si podľa praxe ES dodáva klient sám – účtuje sa len komín (nastaviteľné: fireplaceByClient)
+      companyCostInclVat: (c.p.chimney ? c.extras.chimney ?? 0 : 0) + (c.p.fireplace && c.s.fireplaceByClient === false ? c.extras.fireplace ?? 0 : 0),
     }),
   },
   {
