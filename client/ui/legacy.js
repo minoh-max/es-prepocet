@@ -55,7 +55,7 @@
         const filled = fillDefaults(study, base ? ctx.housesById[base] : null);
         filled.outdoor = L.initOutdoor(filled, ctx.settings, r.merged.pripojky, r.merged.pripojkySrc);
         filled.extras = L.houseExtras(filled, ctx.settings);
-        upd({ ai: { pages: r.merged.pages, notes: r.merged.notes, notesList: r.merged.notesList, houseName: r.merged.houseName, raw: r.raw }, study: filled, matches: matches.map((m) => ({ id: m.house.id, score: m.score, reasons: m.reasons })), baseHouseId: base, baseConfirmed: false, step: 2, aiMeta: { pagesRead: r.raw.length, pagesTotal: pages.length, errors: r.errors } });
+        upd({ ai: { pages: r.merged.pages, notes: r.merged.notes, notesList: r.merged.notesList, unreadable: r.merged.unreadable, checks: r.merged.checks, drawings: r.merged.drawings, houseName: r.merged.houseName, raw: r.raw }, study: filled, matches: matches.map((m) => ({ id: m.house.id, score: m.score, reasons: m.reasons })), baseHouseId: base, baseConfirmed: false, step: 2, aiMeta: { pagesRead: r.raw.length, pagesTotal: pages.length, errors: r.errors } });
         ctx.say(r.errors.length ? `Rozpoznané, ${r.errors.length} strán sa nepodarilo prečítať` : "Podklady sú rozpoznané – skontrolujte údaje");
       } catch (e) {
         const code = e && e.code;
@@ -464,6 +464,11 @@
           <ul>${files.map((f) => html`<li><b>${f.name}</b> <span class="muted">– ${pluralSk(f.pages.length, "strana", "strany", "strán")}: ${f.pages.join(" · ")}</span></li>`)}</ul>
           ${errors.length ? html`<div class="notice bad small"><div><b>${pluralSk(errors.length, "strana sa nepodarila", "strany sa nepodarili", "strán sa nepodarilo")} prečítať:</b><ul>${errors.slice(0, 6).map((e) => html`<li>${e}</li>`)}</ul></div></div>` : null}
         </section>` : null}
+        ${(ai.unreadable || []).length || (ai.checks || []).length ? html`<section id="drawing-checks"><h3>${++n}. Kontrola výkresov</h3>
+          ${(ai.unreadable || []).length ? html`<div class="notice alert small"><div><b>Nečitateľné – Claude ich nehádal, doplňte z výkresu:</b><ul>${ai.unreadable.slice(0, 12).map((u) => html`<li>${u.text} <span class="muted">(${u.src})</span></li>`)}</ul></div></div>` : null}
+          ${(ai.checks || []).some((c) => !c.ok) ? html`<div class="notice small" style="margin-top:8px"><div><b>Kóty alebo plochy nesedia:</b><ul>${ai.checks.filter((c) => !c.ok).slice(0, 12).map((c) => html`<li>${c.text}${c.detail ? ` – ${c.detail}` : ""} <span class="muted">(${c.src})</span></li>`)}</ul></div></div>` : null}
+          ${(ai.checks || []).some((c) => c.ok) ? html`<details class="small" style="margin-top:8px"><summary>Krížová kontrola kót a plôch: ${pluralSk(ai.checks.filter((c) => c.ok).length, "kontrola sedí", "kontroly sedia", "kontrol sedí")}</summary><ul>${ai.checks.filter((c) => c.ok).map((c) => html`<li>${c.text}${c.detail ? ` – ${c.detail}` : ""} <span class="muted">(${c.src})</span></li>`)}</ul></details>` : null}
+        </section>` : null}
         ${topics.length ? html`<section><h3>${++n}. Zistenia z podkladov</h3>
           <div class="topics">${topics.map((t) => html`<div class="topic"><h4>${t.label}</h4><ul>${t.items.map((i) => html`<li class=${i.warn ? "warn" : ""}>${i.text}</li>`)}</ul></div>`)}</div>
         </section>` : null}
@@ -703,7 +708,7 @@
         const doc = {
           id: draft.id, ownerId: caps.uid, ownerName: ctx.profile?.name || caps.me?.name || "", clientName: draft.clientName || "", clientNote: draft.clientNote || "",
           finish: draft.finish, baseHouseId: draft.baseHouseId, baseHouseName: house.name, files, aiSummary: summary || "",
-          ai: draft.ai ? { pages: draft.ai.pages || [], notes: draft.ai.notes || "", notesList: draft.ai.notesList || [], houseName: draft.ai.houseName || "" } : null, variantSel: draft.variantSel || [],
+          ai: draft.ai ? { pages: draft.ai.pages || [], notes: draft.ai.notes || "", notesList: draft.ai.notesList || [], unreadable: draft.ai.unreadable || [], checks: draft.ai.checks || [], drawings: draft.ai.drawings || [], houseName: draft.ai.houseName || "" } : null, variantSel: draft.variantSel || [],
           study: L.clone(draft.study), baseOverrides: L.clone(draft.baseOverrides || {}), matches: draft.matches || [],
           summary: {
             basePrice: r.basePriceInclVat, estimate: r.estimateInclVat, estimateExclVat: r.estimateExclVat, change: r.changeInclVat, changePct: r.changePct, range: r.range,

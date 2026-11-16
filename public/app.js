@@ -391,7 +391,8 @@
   // ---------- AI reading of the study: page by page, then deterministic merge ----------
   const OPENING_TYPES = ["okno", "balkonove", "hs", "vchodove", "vedlajsie", "vnutorne", "garazova", "stresne"];
 
-  const JSON_SHAPE = `{"typStrany":"podorys","podlazie":"1.NP","nazovDomu":null,"pocetPodlazi":null,"typDomu":null,
+  const JSON_SHAPE = `{"razitko":{"stavba":null,"stupen":null,"vykres":null,"cisloVykresu":null,"mierka":null,"datum":null,"jednotkyKot":"mm"},
+"typStrany":"podorys","podlazie":"1.NP","nazovDomu":null,"pocetPodlazi":null,"typDomu":null,
 "plochy":{"uzitkovaCelkomM2":null,"uzitkovaPodlazia":[{"podlazie":"1.NP","m2":null}],"obytnaM2":null,"zastavanaM2":null,"garazM2":null},
 "vonkajsieRozmery":{"sirkaM":null,"dlzkaM":null},
 "pocetIzieb":null,
@@ -405,11 +406,25 @@
 "pripojky":{"vodaM":null,"kanalizaciaM":null,"dazdovaM":null,"plynM":null,"elektroM":null,"odkanalizovanie":null,"vodomernaSachta":null,"revizneSachty":null,"cerpaciaSachta":null,"terasaM2":null,"spevnenePlochyM2":null,"okapovyChodnikM2":null},
 "nadstandardy":[{"kluc":"fve5","mnozstvo":1,"popis":"FV panely na streche"}],
 "istota":{"plochy":"high","otvory":"medium","rez":"high"},
+"necitatelne":[{"co":"šírka okna O3","kde":"pôdorys 1.NP, severná stena"}],
+"kontroly":[{"co":"súčet vnútorných kót južnej steny vs. celková kóta","vysledok":"sedí","detail":"150+3 750+100+4 850+150 = 9 000 mm"}],
 "poznamky":""}`;
 
   function rulesText(extrasCatalog) {
     const extras = (extrasCatalog || []).map((d) => `${d.key} = ${d.label} (${d.unit})`).join("; ");
-    return `Pravidlá:
+    return `POSTUP (pri každom výkrese v tomto poradí):
+A. Rohové razítko: názov stavby, stupeň dokumentácie (štúdia, DSP, DRS, realizačný projekt), názov a číslo výkresu, mierka, dátum → "razitko". Text razítka býva aj otočený.
+B. Mierka a jednotky: urči, či sú kóty v mm alebo m ("jednotkyKot"). Hlavné obvodové kóty ber ako referenčný rámec pre kontrolu všetkých vnútorných rozmerov.
+C. Konštrukcie a miestnosti: nosné steny, priečky, preklady, stĺpy; miestnosti s číslom a výmerou (m²).
+D. Výplne otvorov: označenie (O1, D2, …), kótovaná šírka, výška a výška parapetu.
+E. Výškové kóty: relatívne kóty (±0,000 = čistá podlaha 1.NP) v pôdorysoch aj rezoch – konštrukčná výška, odkvap, hrebeň, základová škára, terén.
+
+PRESNOSŤ (KRITICKÉ):
+- Nulová tolerancia hádania: ak je kóta, text alebo značka rozmazaná, prekrytá čiarou alebo nečitateľná, NEHÁDAJ ju – daj null a zapíš ju do "necitatelne" (čo a kde, napr. „výška okna O4 – pôdorys 1.NP, východná stena“). Číslo, ktoré si nevidel, nesmie byť vo výstupe.
+- Krížová kontrola: súčet vnútorných kót na každej stene porovnaj s celkovou vonkajšou kótou; súčet plôch miestností porovnaj s uvedenou úžitkovou plochou podlažia; rozmery domu so zastavanou plochou. Každú kontrolu zapíš do "kontroly" s výsledkom "sedí" alebo "nesedí" a s výpočtom v "detail". Ak nesedí, uveď rozdiel.
+- Na strane bez výkresu (text) vyplň "kontroly" len pre plochy (súčet miestností vs. úžitková plocha).
+
+Pravidlá:
 1. Kóty sú zvyčajne v mm (11 150 = 11,15 m). Výstup v metroch a m². Text môže byť na výkrese otočený o 90° (legenda, rohová pečiatka) – čítaj ho aj tak.
 2. PLOCHY – pozor na rozdiel:
    - "uzitkovaCelkomM2" vyplň LEN ak je uvedená úžitková plocha celého domu (napr. „Úžitková plocha: 80,97 m²“, „Úžitková plocha 1NP+2NP“).
@@ -667,9 +682,16 @@ ${JSON_SHAPE}`;
     const sit = R.find((r) => r.typStrany === "situacia" && r.pripojky && Object.values(r.pripojky).some((v) => v != null && v !== ""));
     const houseName = first(ordered.map((r) => r.nazovDomu));
     const notesList = [...new Set(R.map((r) => (r.poznamky || "").trim()).filter(Boolean))].slice(0, 16);
+    // nečitateľné miesta a krížové kontroly kót a plôch (s odkazom na stranu)
+    const unreadable = [], checks = [];
+    for (const r of R) {
+      for (const u of Array.isArray(r.necitatelne) ? r.necitatelne : []) if (u && (u.co || u.kde)) unreadable.push({ text: [u.co, u.kde].filter(Boolean).join(" – "), src: src(r) });
+      for (const k of Array.isArray(r.kontroly) ? r.kontroly : []) if (k && k.co) checks.push({ text: k.co, ok: !/nesed/i.test(k.vysledok || ""), detail: k.detail || "", src: src(r) });
+    }
+    const drawings = R.filter((r) => r.razitko && (r.razitko.vykres || r.razitko.mierka)).map((r) => ({ src: src(r), vykres: r.razitko.vykres || "", cislo: r.razitko.cisloVykresu || "", mierka: r.razitko.mierka || "", stupen: r.razitko.stupen || "", datum: r.razitko.datum || "" }));
     const notes = notesList.join(" ");
     return {
-      houseName, notes, notesList, garageM2, pripojky: clean(pr), pripojkySrc: sit ? `situácia – ${sit.__file} str. ${sit.__page}` : Object.values(clean(pr)).length ? "technická správa" : "",
+      houseName, notes, notesList, unreadable, checks, drawings, garageM2, pripojky: clean(pr), pripojkySrc: sit ? `situácia – ${sit.__file} str. ${sit.__page}` : Object.values(clean(pr)).length ? "technická správa" : "",
       pages: R.map((r) => ({ file: r.__file, page: r.__pages || r.__page, type: r.typStrany, floor: r.podlazie })),
       study: clean({
         usableAreaM2: usable, builtAreaM2: built, widthM, lengthM, floorsType, roofType, roofPitchDeg: pitch, storeyHeightM: storey, kneeWallM: knee,
@@ -1330,7 +1352,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         const filled = fillDefaults(study, base ? ctx.housesById[base] : null);
         filled.outdoor = L.initOutdoor(filled, ctx.settings, r.merged.pripojky, r.merged.pripojkySrc);
         filled.extras = L.houseExtras(filled, ctx.settings);
-        upd({ ai: { pages: r.merged.pages, notes: r.merged.notes, notesList: r.merged.notesList, houseName: r.merged.houseName, raw: r.raw }, study: filled, matches: matches.map((m) => ({ id: m.house.id, score: m.score, reasons: m.reasons })), baseHouseId: base, baseConfirmed: false, step: 2, aiMeta: { pagesRead: r.raw.length, pagesTotal: pages.length, errors: r.errors } });
+        upd({ ai: { pages: r.merged.pages, notes: r.merged.notes, notesList: r.merged.notesList, unreadable: r.merged.unreadable, checks: r.merged.checks, drawings: r.merged.drawings, houseName: r.merged.houseName, raw: r.raw }, study: filled, matches: matches.map((m) => ({ id: m.house.id, score: m.score, reasons: m.reasons })), baseHouseId: base, baseConfirmed: false, step: 2, aiMeta: { pagesRead: r.raw.length, pagesTotal: pages.length, errors: r.errors } });
         ctx.say(r.errors.length ? `Rozpoznané, ${r.errors.length} strán sa nepodarilo prečítať` : "Podklady sú rozpoznané – skontrolujte údaje");
       } catch (e) {
         const code = e && e.code;
@@ -1739,6 +1761,11 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
           <ul>${files.map((f) => html`<li><b>${f.name}</b> <span class="muted">– ${pluralSk(f.pages.length, "strana", "strany", "strán")}: ${f.pages.join(" · ")}</span></li>`)}</ul>
           ${errors.length ? html`<div class="notice bad small"><div><b>${pluralSk(errors.length, "strana sa nepodarila", "strany sa nepodarili", "strán sa nepodarilo")} prečítať:</b><ul>${errors.slice(0, 6).map((e) => html`<li>${e}</li>`)}</ul></div></div>` : null}
         </section>` : null}
+        ${(ai.unreadable || []).length || (ai.checks || []).length ? html`<section id="drawing-checks"><h3>${++n}. Kontrola výkresov</h3>
+          ${(ai.unreadable || []).length ? html`<div class="notice alert small"><div><b>Nečitateľné – Claude ich nehádal, doplňte z výkresu:</b><ul>${ai.unreadable.slice(0, 12).map((u) => html`<li>${u.text} <span class="muted">(${u.src})</span></li>`)}</ul></div></div>` : null}
+          ${(ai.checks || []).some((c) => !c.ok) ? html`<div class="notice small" style="margin-top:8px"><div><b>Kóty alebo plochy nesedia:</b><ul>${ai.checks.filter((c) => !c.ok).slice(0, 12).map((c) => html`<li>${c.text}${c.detail ? ` – ${c.detail}` : ""} <span class="muted">(${c.src})</span></li>`)}</ul></div></div>` : null}
+          ${(ai.checks || []).some((c) => c.ok) ? html`<details class="small" style="margin-top:8px"><summary>Krížová kontrola kót a plôch: ${pluralSk(ai.checks.filter((c) => c.ok).length, "kontrola sedí", "kontroly sedia", "kontrol sedí")}</summary><ul>${ai.checks.filter((c) => c.ok).map((c) => html`<li>${c.text}${c.detail ? ` – ${c.detail}` : ""} <span class="muted">(${c.src})</span></li>`)}</ul></details>` : null}
+        </section>` : null}
         ${topics.length ? html`<section><h3>${++n}. Zistenia z podkladov</h3>
           <div class="topics">${topics.map((t) => html`<div class="topic"><h4>${t.label}</h4><ul>${t.items.map((i) => html`<li class=${i.warn ? "warn" : ""}>${i.text}</li>`)}</ul></div>`)}</div>
         </section>` : null}
@@ -1978,7 +2005,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         const doc = {
           id: draft.id, ownerId: caps.uid, ownerName: ctx.profile?.name || caps.me?.name || "", clientName: draft.clientName || "", clientNote: draft.clientNote || "",
           finish: draft.finish, baseHouseId: draft.baseHouseId, baseHouseName: house.name, files, aiSummary: summary || "",
-          ai: draft.ai ? { pages: draft.ai.pages || [], notes: draft.ai.notes || "", notesList: draft.ai.notesList || [], houseName: draft.ai.houseName || "" } : null, variantSel: draft.variantSel || [],
+          ai: draft.ai ? { pages: draft.ai.pages || [], notes: draft.ai.notes || "", notesList: draft.ai.notesList || [], unreadable: draft.ai.unreadable || [], checks: draft.ai.checks || [], drawings: draft.ai.drawings || [], houseName: draft.ai.houseName || "" } : null, variantSel: draft.variantSel || [],
           study: L.clone(draft.study), baseOverrides: L.clone(draft.baseOverrides || {}), matches: draft.matches || [],
           summary: {
             basePrice: r.basePriceInclVat, estimate: r.estimateInclVat, estimateExclVat: r.estimateExclVat, change: r.changeInclVat, changePct: r.changePct, range: r.range,

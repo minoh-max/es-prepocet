@@ -52,3 +52,15 @@ test("výber domu podľa názvu: „Blanka 3B“ v správe = katalógový „Bla
   const m2 = L.findClosestHouses({ usableAreaM2: 86, builtAreaM2: 59.4, floorsType: "podkrovie", roofType: "sedlova" }, H, "dom Blanka 35", 3);
   assert.equal(m2[0].house.name, "Blanka 35");
 });
+
+test("čítanie výkresov: nečitateľné kóty a krížové kontroly sa zbierajú so zdrojom strany, prompt zakazuje hádanie", () => {
+  const m = L.mergePages([
+    { __file: "s.pdf", __page: 2, typStrany: "podorys", razitko: { vykres: "Pôdorys 1.NP", mierka: "1:50" }, necitatelne: [{ co: "šírka okna O3", kde: "severná stena" }], kontroly: [{ co: "súčet kót južnej steny", vysledok: "nesedí", detail: "8 950 vs 9 000 mm" }, { co: "plochy 1.NP", vysledok: "sedí" }] },
+  ], []);
+  assert.equal(m.unreadable.length, 1);
+  assert.match(m.unreadable[0].src, /s\.pdf, str\. 2/);
+  assert.equal(m.checks.filter((c) => !c.ok).length, 1);
+  assert.equal(m.drawings[0].mierka, "1:50");
+  const prompt = L.pagePrompt ? L.pagePrompt({ file: "s.pdf", page: 1 }, ["celá strana"], []) : "";
+  if (prompt) { assert.match(prompt, /NEHÁDAJ/); assert.match(prompt, /necitatelne/); assert.match(prompt, /razitko/); }
+});
