@@ -4,7 +4,7 @@
     const upd = (patch) => setDraft((d) => ({ ...(d || draft), ...patch }));
     const step = draft.step || 1;
     const house = draft.baseHouseId ? ctx.housesById[draft.baseHouseId] : null;
-    const canResult = !!(house && draft.study && draft.study.usableAreaM2);
+    const canResult = !!(house && draft.study && draft.study.usableAreaM2 && draft.baseConfirmed !== false);
     const steps = [[1, "Podklady"], [2, "Kontrola údajov"], [3, "Výsledok"]];
     return html`
       <div class="page-head">
@@ -55,7 +55,7 @@
         const filled = fillDefaults(study, base ? ctx.housesById[base] : null);
         filled.outdoor = L.initOutdoor(filled, ctx.settings, r.merged.pripojky, r.merged.pripojkySrc);
         filled.extras = L.houseExtras(filled, ctx.settings);
-        upd({ ai: { pages: r.merged.pages, notes: r.merged.notes, notesList: r.merged.notesList, houseName: r.merged.houseName, raw: r.raw }, study: filled, matches: matches.map((m) => ({ id: m.house.id, score: m.score, reasons: m.reasons })), baseHouseId: base, step: 2, aiMeta: { pagesRead: r.raw.length, pagesTotal: pages.length, errors: r.errors } });
+        upd({ ai: { pages: r.merged.pages, notes: r.merged.notes, notesList: r.merged.notesList, houseName: r.merged.houseName, raw: r.raw }, study: filled, matches: matches.map((m) => ({ id: m.house.id, score: m.score, reasons: m.reasons })), baseHouseId: base, baseConfirmed: false, step: 2, aiMeta: { pagesRead: r.raw.length, pagesTotal: pages.length, errors: r.errors } });
         ctx.say(r.errors.length ? `Rozpoznané, ${r.errors.length} strán sa nepodarilo prečítať` : "Podklady sú rozpoznané – skontrolujte údaje");
       } catch (e) {
         const code = e && e.code;
@@ -315,8 +315,9 @@
           <div class="grow"><h3 style="font-size:20px">${house.name}</h3>
             <div class="muted">${house.disp} · ${fmtNum(house.pu, 1)} m² úžitková · ${fmtNum(house.pz, 1)} m² zastavaná · ${L.FLOORS_LABEL[L.KIND[house.kind]]} · ${L.ROOF_LABEL[L.ROOF[house.roof]].toLowerCase()} strecha</div>
             <div class="row" style="margin-top:8px"><span class="badge accent">${fmtEur(draft.finish === "holodom" ? house.hol : house.price)} ${draft.finish === "holodom" ? "holodom" : "štandard"} s DPH</span><a href=${L.houseUrl(house)} target="_blank" rel="noopener" class="small">Otvoriť na webe ↗</a></div>
+            ${draft.baseConfirmed === false ? html`<div class="notice" style="margin-top:12px"><div><b>Potvrďte východiskový dom.</b> Aplikácia ho navrhla podľa rozmerov a plôch zo štúdie. Presnosť odhadu závisí najmä od správneho domu – ak klient vychádza z iného katalógového domu, vyberte ho vpravo alebo cez „Zmeniť dom“.<div style="margin-top:8px"><button class="btn primary sm" onClick=${() => upd({ baseConfirmed: true })}>Potvrdiť dom</button></div></div></div>` : null}
           </div>
-          ${matches.length ? html`<div style="min-width:220px"><div class="small muted" style="margin-bottom:6px">Najbližšie katalógové domy</div>${matches.slice(0, 4).map((m) => { const h = ctx.housesById[m.id]; return html`<button class="btn sm" style="width:100%;justify-content:space-between;margin-bottom:4px;background:${m.id === house.id ? "var(--accent-soft)" : ""}" onClick=${() => upd({ baseHouseId: m.id })}><span>${h.name}</span><span class="faint">${m.score} %</span></button>`; })}</div>` : null}
+          ${matches.length ? html`<div style="min-width:220px"><div class="small muted" style="margin-bottom:6px">Najbližšie katalógové domy</div>${matches.slice(0, 4).map((m) => { const h = ctx.housesById[m.id]; return html`<button class="btn sm" style="width:100%;justify-content:space-between;margin-bottom:4px;background:${m.id === house.id ? "var(--accent-soft)" : ""}" onClick=${() => upd({ baseHouseId: m.id, baseConfirmed: true })} title=${(m.reasons || []).join(", ")}><span>${h.name}</span><span class="faint">${m.score} %</span></button>`; })}</div>` : null}
         </div>` : html`<div class="card-pad"><button class="btn primary" onClick=${() => setPick(true)}>Vybrať východiskový dom</button></div>`}
       </div>
 
@@ -328,9 +329,9 @@
       ${house ? html`<${OutdoorEditor} ctx=${ctx} study=${study} upd=${upd} />` : null}
       <div class="row" style="justify-content:space-between">
         <button class="btn" onClick=${() => upd({ step: 1 })}><${Icon} name="back" />Podklady</button>
-        <button class="btn primary lg" disabled=${!house || !study.usableAreaM2} onClick=${() => upd({ step: 3 })}>Vypočítať odhad</button>
+        <button class="btn primary lg" disabled=${!house || !study.usableAreaM2 || draft.baseConfirmed === false} title=${draft.baseConfirmed === false ? "Najprv potvrďte východiskový dom" : ""} onClick=${() => upd({ step: 3 })}>Vypočítať odhad</button>
       </div>
-      ${pick ? html`<${Sheet} wide onClose=${() => setPick(false)}><${HousePicker} ctx=${ctx} study=${study} onPick=${(h) => { upd({ baseHouseId: h.id, baseOverrides: {} }); setPick(false); }} /><//>` : null}`;
+      ${pick ? html`<${Sheet} wide onClose=${() => setPick(false)}><${HousePicker} ctx=${ctx} study=${study} onPick=${(h) => { upd({ baseHouseId: h.id, baseOverrides: {}, baseConfirmed: true }); setPick(false); }} /><//>` : null}`;
   }
 
   const OUT_GROUPS = { pripojky: "Prípojky na pozemku", objekty: "Šachty, žumpa a meranie", plochy: "Spevnené plochy", ine: "Ďalšie položky na pozemku" };

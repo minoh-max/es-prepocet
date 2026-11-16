@@ -6,3 +6,4 @@ test/shots/
 .DS_Store
 .netlify/
 .superpowers/
+test/.engine.test.js

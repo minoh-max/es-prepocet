@@ -95,11 +95,17 @@
         if (params.floorsType && hp.floorsType !== params.floorsType) s -= 30; else if (params.floorsType) reasons.push(FLOORS_LABEL[hp.floorsType].toLowerCase());
         if (params.roofType && hp.roofType !== params.roofType) s -= 10; else if (params.roofType) reasons.push(`strecha ${ROOF_LABEL[hp.roofType].toLowerCase()}`);
         const rel = (a, b) => (a && b ? Math.abs(a - b) / b : 0.3);
-        s -= Math.min(30, rel(hp.usableAreaM2, params.usableAreaM2) * 100);
-        if (params.builtAreaM2) s -= Math.min(15, rel(hp.builtAreaM2, params.builtAreaM2) * 60);
+        // Úžitková plocha sa v katalógu a v štúdiách uvádza raz s garážou, raz bez nej – porovná sa lepší z oboch výkladov.
+        // Spoľahlivejšie meradlo veľkosti domu sú zastavaná plocha a vonkajšie rozmery (overené na rozpočtoch ES).
+        const gar = params.garages ? params.garages * 20 : 0;
+        const relUse = Math.min(rel(hp.usableAreaM2, params.usableAreaM2), gar ? rel(hp.usableAreaM2, params.usableAreaM2 + gar) : 1);
+        s -= Math.min(20, relUse * 70);
+        if (params.builtAreaM2) s -= Math.min(25, rel(hp.builtAreaM2, params.builtAreaM2) * 100);
         if (params.widthM && params.lengthM && hp.widthM && hp.lengthM) {
           const a = [hp.widthM, hp.lengthM].sort((x, y) => x - y), b = [params.widthM, params.lengthM].sort((x, y) => x - y);
-          s -= Math.min(10, (rel(a[0], b[0]) + rel(a[1], b[1])) * 15);
+          const d = rel(a[0], b[0]) + rel(a[1], b[1]);
+          s -= Math.min(20, d * 60);
+          if (d < 0.01) reasons.push("vonkajšie rozmery sedia");
         }
         if (params.bathrooms != null) s -= Math.min(8, Math.abs((h.bath || 1) - params.bathrooms) * 4);
         if (params.garages != null) s -= Math.min(8, Math.abs((h.gar || 0) - params.garages) * 6);
@@ -592,7 +598,8 @@ ${JSON_SHAPE}`;
     const rz = Object.assign({}, ...sections.map((r) => clean(r.rez || {})).reverse());
     const rzAny = Object.assign({}, ...R.map((r) => clean(r.rez || {})).reverse(), rz);
     const dtMin = num(rz.dtRadyMin) ?? num(rzAny.dtRadyMin), dtMax = num(rz.dtRadyMax) ?? num(rzAny.dtRadyMax);
-    const dtRows = dtMax ?? dtMin;
+    // rozpätie radov DT (svah, napr. „2 až 8 radov“): počíta sa priemer, nie maximum (overené na rozpočte ES)
+    const dtRows = dtMin != null && dtMax != null ? Math.round((dtMin + dtMax) / 2) : dtMax ?? dtMin;
     const dtTh = first([...tech, ...sections, ...R].map((r) => num(r.rez && r.rez.dtHrubkaMm)));
     const hasDt = !!(dtRows || dtTh || /dt|debn/i.test(String(rzAny.typZalozenia || "")));
     const fType = hasDt ? "pasy_dt" : ["pasy", "doska"].includes(rzAny.typZalozenia) ? rzAny.typZalozenia : /dosk/i.test(String(rzAny.typZalozenia || "")) ? "doska" : rzAny.typZalozenia ? "pasy" : undefined;
@@ -603,7 +610,7 @@ ${JSON_SHAPE}`;
     }) : undefined;
     if (foundation) {
       conf.foundation = dtMin != null && dtMax != null && dtMin !== dtMax ? "low" : sections.length ? "high" : "medium";
-      evidence.foundation = dtMin != null && dtMax != null && dtMin !== dtMax ? `projekt uvádza ${dtMin}–${dtMax} radov DT, počíta sa s ${dtMax}` : sections.length ? src(sections[0]) : "technická správa";
+      evidence.foundation = dtMin != null && dtMax != null && dtMin !== dtMax ? `projekt uvádza ${dtMin}–${dtMax} radov DT, počíta sa s priemerom ${dtRows}` : sections.length ? src(sections[0]) : "technická správa";
     }
     const typDomu = first(ordered.map((r) => normFloors(r.typDomu)));
     const nFloors = first(ordered.map((r) => num(r.pocetPodlazi))) || (floorList.length > 1 ? floorList.length : undefined);

@@ -50,6 +50,10 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.click(".topbar >> text=Nový prepočet"); await page.waitForTimeout(400);
     await page.setInputFiles("input[type=file]", [path.join(ROOT, "test", "fixtures", "plan.png")]); await page.waitForTimeout(800);
     await page.click("text=Rozpoznať podklady"); await page.waitForSelector("text=Poznámka k podkladom", { timeout: 30000 }); await page.waitForTimeout(800);
+    // východiskový dom musí obchodník potvrdiť – dovtedy sa odhad nedá vypočítať
+    if (!(await page.isDisabled("button:has-text('Vypočítať odhad')"))) fail("odhad sa dá vypočítať bez potvrdenia východiskového domu");
+    await page.click("button:has-text('Potvrdiť dom')"); await page.waitForTimeout(300);
+    if (await page.isDisabled("button:has-text('Vypočítať odhad')")) fail("po potvrdení domu sa odhad stále nedá vypočítať");
     await page.click("text=Vypočítať odhad"); await page.waitForTimeout(1200);
     await page.screenshot({ path: SHOTS + "/04_result.png" });
     const est = await page.textContent(".kpi.hero .kpi-value"); console.log("odhad:", est);

@@ -95,11 +95,17 @@
         if (params.floorsType && hp.floorsType !== params.floorsType) s -= 30; else if (params.floorsType) reasons.push(FLOORS_LABEL[hp.floorsType].toLowerCase());
         if (params.roofType && hp.roofType !== params.roofType) s -= 10; else if (params.roofType) reasons.push(`strecha ${ROOF_LABEL[hp.roofType].toLowerCase()}`);
         const rel = (a, b) => (a && b ? Math.abs(a - b) / b : 0.3);
-        s -= Math.min(30, rel(hp.usableAreaM2, params.usableAreaM2) * 100);
-        if (params.builtAreaM2) s -= Math.min(15, rel(hp.builtAreaM2, params.builtAreaM2) * 60);
+        // Úžitková plocha sa v katalógu a v štúdiách uvádza raz s garážou, raz bez nej – porovná sa lepší z oboch výkladov.
+        // Spoľahlivejšie meradlo veľkosti domu sú zastavaná plocha a vonkajšie rozmery (overené na rozpočtoch ES).
+        const gar = params.garages ? params.garages * 20 : 0;
+        const relUse = Math.min(rel(hp.usableAreaM2, params.usableAreaM2), gar ? rel(hp.usableAreaM2, params.usableAreaM2 + gar) : 1);
+        s -= Math.min(20, relUse * 70);
+        if (params.builtAreaM2) s -= Math.min(25, rel(hp.builtAreaM2, params.builtAreaM2) * 100);
         if (params.widthM && params.lengthM && hp.widthM && hp.lengthM) {
           const a = [hp.widthM, hp.lengthM].sort((x, y) => x - y), b = [params.widthM, params.lengthM].sort((x, y) => x - y);
-          s -= Math.min(10, (rel(a[0], b[0]) + rel(a[1], b[1])) * 15);
+          const d = rel(a[0], b[0]) + rel(a[1], b[1]);
+          s -= Math.min(20, d * 60);
+          if (d < 0.01) reasons.push("vonkajšie rozmery sedia");
         }
         if (params.bathrooms != null) s -= Math.min(8, Math.abs((h.bath || 1) - params.bathrooms) * 4);
         if (params.garages != null) s -= Math.min(8, Math.abs((h.gar || 0) - params.garages) * 6);
@@ -592,7 +598,8 @@ ${JSON_SHAPE}`;
     const rz = Object.assign({}, ...sections.map((r) => clean(r.rez || {})).reverse());
     const rzAny = Object.assign({}, ...R.map((r) => clean(r.rez || {})).reverse(), rz);
     const dtMin = num(rz.dtRadyMin) ?? num(rzAny.dtRadyMin), dtMax = num(rz.dtRadyMax) ?? num(rzAny.dtRadyMax);
-    const dtRows = dtMax ?? dtMin;
+    // rozpätie radov DT (svah, napr. „2 až 8 radov“): počíta sa priemer, nie maximum (overené na rozpočte ES)
+    const dtRows = dtMin != null && dtMax != null ? Math.round((dtMin + dtMax) / 2) : dtMax ?? dtMin;
     const dtTh = first([...tech, ...sections, ...R].map((r) => num(r.rez && r.rez.dtHrubkaMm)));
     const hasDt = !!(dtRows || dtTh || /dt|debn/i.test(String(rzAny.typZalozenia || "")));
     const fType = hasDt ? "pasy_dt" : ["pasy", "doska"].includes(rzAny.typZalozenia) ? rzAny.typZalozenia : /dosk/i.test(String(rzAny.typZalozenia || "")) ? "doska" : rzAny.typZalozenia ? "pasy" : undefined;
@@ -603,7 +610,7 @@ ${JSON_SHAPE}`;
     }) : undefined;
     if (foundation) {
       conf.foundation = dtMin != null && dtMax != null && dtMin !== dtMax ? "low" : sections.length ? "high" : "medium";
-      evidence.foundation = dtMin != null && dtMax != null && dtMin !== dtMax ? `projekt uvádza ${dtMin}–${dtMax} radov DT, počíta sa s ${dtMax}` : sections.length ? src(sections[0]) : "technická správa";
+      evidence.foundation = dtMin != null && dtMax != null && dtMin !== dtMax ? `projekt uvádza ${dtMin}–${dtMax} radov DT, počíta sa s priemerom ${dtRows}` : sections.length ? src(sections[0]) : "technická správa";
     }
     const typDomu = first(ordered.map((r) => normFloors(r.typDomu)));
     const nFloors = first(ordered.map((r) => num(r.pocetPodlazi))) || (floorList.length > 1 ? floorList.length : undefined);
@@ -1263,7 +1270,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     const upd = (patch) => setDraft((d) => ({ ...(d || draft), ...patch }));
     const step = draft.step || 1;
     const house = draft.baseHouseId ? ctx.housesById[draft.baseHouseId] : null;
-    const canResult = !!(house && draft.study && draft.study.usableAreaM2);
+    const canResult = !!(house && draft.study && draft.study.usableAreaM2 && draft.baseConfirmed !== false);
     const steps = [[1, "Podklady"], [2, "Kontrola údajov"], [3, "Výsledok"]];
     return html`
       <div class="page-head">
@@ -1314,7 +1321,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         const filled = fillDefaults(study, base ? ctx.housesById[base] : null);
         filled.outdoor = L.initOutdoor(filled, ctx.settings, r.merged.pripojky, r.merged.pripojkySrc);
         filled.extras = L.houseExtras(filled, ctx.settings);
-        upd({ ai: { pages: r.merged.pages, notes: r.merged.notes, notesList: r.merged.notesList, houseName: r.merged.houseName, raw: r.raw }, study: filled, matches: matches.map((m) => ({ id: m.house.id, score: m.score, reasons: m.reasons })), baseHouseId: base, step: 2, aiMeta: { pagesRead: r.raw.length, pagesTotal: pages.length, errors: r.errors } });
+        upd({ ai: { pages: r.merged.pages, notes: r.merged.notes, notesList: r.merged.notesList, houseName: r.merged.houseName, raw: r.raw }, study: filled, matches: matches.map((m) => ({ id: m.house.id, score: m.score, reasons: m.reasons })), baseHouseId: base, baseConfirmed: false, step: 2, aiMeta: { pagesRead: r.raw.length, pagesTotal: pages.length, errors: r.errors } });
         ctx.say(r.errors.length ? `Rozpoznané, ${r.errors.length} strán sa nepodarilo prečítať` : "Podklady sú rozpoznané – skontrolujte údaje");
       } catch (e) {
         const code = e && e.code;
@@ -1574,8 +1581,9 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
           <div class="grow"><h3 style="font-size:20px">${house.name}</h3>
             <div class="muted">${house.disp} · ${fmtNum(house.pu, 1)} m² úžitková · ${fmtNum(house.pz, 1)} m² zastavaná · ${L.FLOORS_LABEL[L.KIND[house.kind]]} · ${L.ROOF_LABEL[L.ROOF[house.roof]].toLowerCase()} strecha</div>
             <div class="row" style="margin-top:8px"><span class="badge accent">${fmtEur(draft.finish === "holodom" ? house.hol : house.price)} ${draft.finish === "holodom" ? "holodom" : "štandard"} s DPH</span><a href=${L.houseUrl(house)} target="_blank" rel="noopener" class="small">Otvoriť na webe ↗</a></div>
+            ${draft.baseConfirmed === false ? html`<div class="notice" style="margin-top:12px"><div><b>Potvrďte východiskový dom.</b> Aplikácia ho navrhla podľa rozmerov a plôch zo štúdie. Presnosť odhadu závisí najmä od správneho domu – ak klient vychádza z iného katalógového domu, vyberte ho vpravo alebo cez „Zmeniť dom“.<div style="margin-top:8px"><button class="btn primary sm" onClick=${() => upd({ baseConfirmed: true })}>Potvrdiť dom</button></div></div></div>` : null}
           </div>
-          ${matches.length ? html`<div style="min-width:220px"><div class="small muted" style="margin-bottom:6px">Najbližšie katalógové domy</div>${matches.slice(0, 4).map((m) => { const h = ctx.housesById[m.id]; return html`<button class="btn sm" style="width:100%;justify-content:space-between;margin-bottom:4px;background:${m.id === house.id ? "var(--accent-soft)" : ""}" onClick=${() => upd({ baseHouseId: m.id })}><span>${h.name}</span><span class="faint">${m.score} %</span></button>`; })}</div>` : null}
+          ${matches.length ? html`<div style="min-width:220px"><div class="small muted" style="margin-bottom:6px">Najbližšie katalógové domy</div>${matches.slice(0, 4).map((m) => { const h = ctx.housesById[m.id]; return html`<button class="btn sm" style="width:100%;justify-content:space-between;margin-bottom:4px;background:${m.id === house.id ? "var(--accent-soft)" : ""}" onClick=${() => upd({ baseHouseId: m.id, baseConfirmed: true })} title=${(m.reasons || []).join(", ")}><span>${h.name}</span><span class="faint">${m.score} %</span></button>`; })}</div>` : null}
         </div>` : html`<div class="card-pad"><button class="btn primary" onClick=${() => setPick(true)}>Vybrať východiskový dom</button></div>`}
       </div>
 
@@ -1587,9 +1595,9 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
       ${house ? html`<${OutdoorEditor} ctx=${ctx} study=${study} upd=${upd} />` : null}
       <div class="row" style="justify-content:space-between">
         <button class="btn" onClick=${() => upd({ step: 1 })}><${Icon} name="back" />Podklady</button>
-        <button class="btn primary lg" disabled=${!house || !study.usableAreaM2} onClick=${() => upd({ step: 3 })}>Vypočítať odhad</button>
+        <button class="btn primary lg" disabled=${!house || !study.usableAreaM2 || draft.baseConfirmed === false} title=${draft.baseConfirmed === false ? "Najprv potvrďte východiskový dom" : ""} onClick=${() => upd({ step: 3 })}>Vypočítať odhad</button>
       </div>
-      ${pick ? html`<${Sheet} wide onClose=${() => setPick(false)}><${HousePicker} ctx=${ctx} study=${study} onPick=${(h) => { upd({ baseHouseId: h.id, baseOverrides: {} }); setPick(false); }} /><//>` : null}`;
+      ${pick ? html`<${Sheet} wide onClose=${() => setPick(false)}><${HousePicker} ctx=${ctx} study=${study} onPick=${(h) => { upd({ baseHouseId: h.id, baseOverrides: {}, baseConfirmed: true }); setPick(false); }} /><//>` : null}`;
   }
 
   const OUT_GROUPS = { pripojky: "Prípojky na pozemku", objekty: "Šachty, žumpa a meranie", plochy: "Spevnené plochy", ine: "Ďalšie položky na pozemku" };
