@@ -336,7 +336,12 @@
         <button class="btn" onClick=${() => upd({ step: 1 })}><${Icon} name="back" />Podklady</button>
         <button class="btn primary lg" disabled=${!house || !study.usableAreaM2 || draft.baseConfirmed === false} title=${draft.baseConfirmed === false ? "Najprv potvrďte východiskový dom" : ""} onClick=${() => upd({ step: 3 })}>Vypočítať odhad</button>
       </div>
-      ${pick ? html`<${Sheet} wide onClose=${() => setPick(false)}><${HousePicker} ctx=${ctx} study=${study} onPick=${(h) => { upd({ baseHouseId: h.id, baseOverrides: {}, baseConfirmed: true }); setPick(false); }} /><//>` : null}`;
+      ${pick ? html`<${Sheet} wide onClose=${() => setPick(false)}><${HousePicker} ctx=${ctx} study=${study} onPick=${(h) => {
+        // ručné zadanie bez štúdie: chýbajúce údaje (plochy, typ, strecha…) sa doplnia z vybraného domu
+        const hp = L.houseParams(h), st = { ...(draft.study || {}) };
+        let filled = false;
+        for (const k of Object.keys(hp)) if (st[k] == null || st[k] === "") { st[k] = hp[k]; filled = true; }
+        upd({ baseHouseId: h.id, baseOverrides: {}, baseConfirmed: true, ...(filled ? { study: fillDefaults(st, h) } : {}) }); setPick(false); }} /><//>` : null}`;
   }
 
   const OUT_GROUPS = { pripojky: "Prípojky na pozemku", objekty: "Šachty, žumpa a meranie", plochy: "Spevnené plochy", ine: "Ďalšie položky na pozemku" };
@@ -647,6 +652,8 @@
     const eb = L.effectiveBase(house, ctx.settings);
     const study = L.clean({ ...draft.study });
     delete study.materialTexts; delete study.evidence;
+    // bez zastavanej plochy sa nedá počítať geometria: odvoď ju z východiskového domu v pomere úžitkových plôch
+    if (!study.builtAreaM2 && study.usableAreaM2 && eb.params.builtAreaM2 && eb.params.usableAreaM2) study.builtAreaM2 = Math.round(eb.params.builtAreaM2 * study.usableAreaM2 / eb.params.usableAreaM2 * 10) / 10;
     study.materials = L.clean(draft.study.materials || {});
     const outdoorParams = draft.study.outdoor || L.initOutdoor(draft.study, ctx.settings);
     delete study.outdoor;
