@@ -829,7 +829,8 @@ ${JSON_SHAPE}`;
         onProgress && onProgress(done, jobs.length, j.kind === "text" ? { file: j.file, page: `${j.pages.length} str. textu` } : j.page);
       }
     }
-    await Promise.all([worker(), worker()]);
+    // 5 strán naraz: štúdia so 7 – 10 stranami sa prečíta 2 – 3× rýchlejšie ako po dvoch (pri preťažení server čaká a opakuje)
+    await Promise.all(Array.from({ length: Math.min(5, jobs.length) }, () => worker()));
     if (!results.some(Boolean)) throw new Error(errors[0] || "Žiadna strana sa nedala prečítať.");
     const merged = mergePages(results, extrasCatalog);
     return { merged, raw: results.filter(Boolean), study: aiToStudy(merged, prices), errors, jobs: jobs.length };

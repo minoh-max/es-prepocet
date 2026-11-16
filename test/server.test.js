@@ -119,3 +119,11 @@ test("vypnutý účet sa neprihlási a stratí reláciu", async () => {
   const self = users.find((u) => u.email === "admin@firma.sk");
   assert.equal((await call("a", "PATCH", "/api/users/" + self.id, { active: false })).status, 400);
 });
+
+test("AI: odrezaný alebo mierne poškodený JSON sa opraví, text bez objektu je chyba", () => {
+  const { extractJson } = require("../server/ai.js");
+  const v = extractJson('{"typStrany":"podorys","plochy":{"uzitkovaCelkomM2":48.47},"miestnosti":[{"nazov":"Izba","plochaM2":10.99},{"nazov":"Chod');
+  assert.equal(v.plochy.uzitkovaCelkomM2, 48.47);
+  assert.deepEqual(extractJson('```json\n{"a":1,}\n```'), { a: 1 });
+  assert.throws(() => extractJson("Nemôžem odpovedať."), /platný JSON/);
+});

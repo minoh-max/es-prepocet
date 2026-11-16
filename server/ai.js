@@ -15,8 +15,10 @@ function extractJson(text) {
   try { return JSON.parse(t); } catch (e) { /* hľadaj objekt v texte */ }
   const a = t.indexOf("{"), b = t.lastIndexOf("}");
   if (a >= 0 && b > a) {
-    try { return JSON.parse(t.slice(a, b + 1)); } catch (e) { /* nižšie */ }
+    try { return JSON.parse(t.slice(a, b + 1)); } catch (e) { /* oprava nižšie */ }
   }
+  // odrezaný koniec dlhej odpovede, čiarka navyše, komentár
+  if (a >= 0) { try { const v = JSON.parse(require("jsonrepair").jsonrepair(t.slice(a))); if (v && typeof v === "object") return v; } catch (e) { /* nižšie */ } }
   throw new AiError("Odpoveď AI nebola platný JSON.", "bad_json");
 }
 
@@ -44,7 +46,7 @@ async function callAi({ prompt, images = [], json = false, tier = "complex" }) {
   ];
   const body = {
     model,
-    max_tokens: json ? 8192 : 1500,
+    max_tokens: json ? 32000 : 4000, // premýšľanie modelu sa počíta do limitu – pri 8 192 bola odpoveď na hustý pôdorys prázdna
     messages: [{ role: "user", content }],
     ...(json ? { system: "Odpovedaj výhradne jedným platným JSON objektom, bez ďalšieho textu a bez značiek ```." } : {}),
   };
