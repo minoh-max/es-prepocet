@@ -119,6 +119,18 @@ function explain(def: ElementDef, b: ElementSide, s: ElementSide): string {
   if (def.pricedBy === "firma" && b.quantity !== s.quantity && def.key !== "zdroj_tepla") {
     parts.push(`${fmtNum(b.quantity)} → ${fmtNum(s.quantity)} ${s.unit}`);
   }
+  // rovnaké množstvo prvku, ale iná skladba (napr. širšia pätka, hrubší štrk): vysvetli položkami s najväčším rozdielom
+  if (!parts.length && Math.abs(s.cost - b.cost) >= 50) {
+    const key = (l: ElementSide["lines"][number]) => `${l.pathCode}|${l.name}`;
+    const diffs = [...new Set([...b.lines, ...s.lines].map(key))].map((k) => {
+      const lb = b.lines.filter((l) => key(l) === k), ls = s.lines.filter((l) => key(l) === k);
+      const qb = lb.reduce((a, l) => a + l.quantity, 0), qs = ls.reduce((a, l) => a + l.quantity, 0);
+      const cb = lb.reduce((a, l) => a + l.cost, 0), cs = ls.reduce((a, l) => a + l.cost, 0);
+      const l = ls[0] || lb[0];
+      return { name: l.name, unit: l.unit, qb, qs, d: cs - cb };
+    }).filter((x) => Math.abs(x.d) >= 20).sort((a, c) => Math.abs(c.d) - Math.abs(a.d)).slice(0, 2);
+    for (const x of diffs) parts.push(`${x.name}: ${fmtNum(x.qb, 1)} → ${fmtNum(x.qs, 1)} ${x.unit}`);
+  }
   return parts.join(", ") || "bez podstatnej zmeny";
 }
 
