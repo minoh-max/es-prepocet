@@ -59,6 +59,8 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.screenshot({ path: SHOTS + "/04_result.png" });
     const est = await page.textContent(".kpi.hero .kpi-value"); console.log("odhad:", est);
     const cc = await page.textContent("#cross-check").catch(() => null); console.log("kontrola:", (cc || "").replace(/\s+/g, " ").slice(0, 140)); if (!cc || !/Kontrola z \d+ podobných domov/.test(cc)) errors.push("chýba kontrola z podobných domov");
+    const sc = await page.textContent("#sanity-check").catch(() => null); console.log("kontrola rozpočtu:", (sc || "").replace(/\s+/g, " ").slice(0, 200)); if (!sc || !/Kontrola rozpočtu/.test(sc) || !/Tri čísla, ktoré overte/.test(sc)) errors.push("chýba kontrola rozpočtu");
+    await page.click("#sanity-check button:has-text('Zobraziť')").catch(() => {}); await page.waitForTimeout(200); await page.locator("#sanity-check").screenshot({ path: SHOTS + "/04b_sanity.png" }).catch(() => {});
     await page.fill("#client-name", "Test klient").catch(() => {});
     await page.click("text=Uložiť prepočet"); await page.waitForTimeout(1000);
     const dl = page.waitForEvent("download", { timeout: 15000 });

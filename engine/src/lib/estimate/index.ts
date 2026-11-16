@@ -6,3 +6,5 @@ export type { ElementDef, MaterialRole } from "./elements";
 export { computeEstimate, materialAlternatives, fmtEur, applyPatch, standardHouse, standardOpenings, withStandard, defaultRoofPitch } from "./engine";
 export { DEFAULT_ENGINE_SETTINGS } from "./defaults";
 export { computeOutdoor, isOutdoorExtra, splitExtras } from "./outdoor";
+export { sanityCheck } from "./sanity";
+export type { SanityFinding, SanityReport, SanityVerify, SanitySeverity, SanityOwner } from "./sanity";

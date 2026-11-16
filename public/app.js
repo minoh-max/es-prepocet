@@ -2000,11 +2000,35 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     const sorted = cross.map((x) => x.estimate).sort((a, b) => a - b);
     const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : r.estimateInclVat;
     const check = { peers: cross, median, low: sorted[0], high: sorted[sorted.length - 1], devPct: (r.estimateInclVat / median - 1) * 100 };
-    return { result: r, house, baseParams: eb.params, studyParams: study, variants, outdoor, outdoorParams, check };
+    // Kontrola rozpočtu pred odoslaním: vnútorná konzistencia množstiev, cien a rozsahu (bez AI, nič nehodnotí trhovo)
+    const sanity = E.sanityCheck({ result: r, base: eb.params, study, outdoor: outdoorParams, settings: ctx.settings });
+    return { result: r, house, baseParams: eb.params, studyParams: study, variants, outdoor, outdoorParams, check, sanity };
+  }
+
+  /** Kontrola rozpočtu pred odoslaním ponuky – „druhý pár očí“ (pevné pravidlá, nie AI). */
+  const SEV = { chyba: ["Chyba", "sev-err"], upozornenie: ["Overiť", "sev-warn"], info: ["Info", "sev-info"] };
+  function SanityCard({ sanity, admin }) {
+    const [open, setOpen] = useState(false);
+    if (!sanity) return null;
+    const { findings, verify, counts } = sanity;
+    const bad = counts.chyba > 0, warn = counts.upozornenie > 0;
+    const headline = bad ? `${counts.chyba} ${counts.chyba === 1 ? "chyba" : counts.chyba < 5 ? "chyby" : "chýb"} – opravte pred odoslaním klientovi`
+      : warn ? `${counts.upozornenie} ${counts.upozornenie === 1 ? "vec" : counts.upozornenie < 5 ? "veci" : "vecí"} na overenie`
+      : "Rozpočet je vnútorne konzistentný";
+    return html`<div class="card" id="sanity-check">
+      <div class="card-head"><div><h2>Kontrola rozpočtu</h2><div class="sub">${headline}. Kontroluje sa len to, či množstvá, ceny a rozsah k sebe sedia – nie trhová cena.</div></div>
+        ${findings.length ? html`<button class="btn plain sm" onClick=${() => setOpen(!open)}>${open ? "Skryť" : `Zobraziť (${findings.length})`}</button>` : null}</div>
+      ${(open || bad) && findings.length ? html`<div class="table-wrap"><table class="t dense sanity">
+        <thead><tr><th></th><th>Riadok</th><th>Čo nesedí</th><th>Prečo</th><th>Čo overiť</th><th>Kto</th></tr></thead>
+        <tbody>${findings.map((f) => html`<tr data-id=${f.id}><td><span class=${"badge " + SEV[f.severity][1]}>${SEV[f.severity][0]}</span></td><td><b>${f.line}</b></td><td>${f.what}${admin && f.adminDetail ? html`<div class="faint small">${f.adminDetail}</div>` : null}</td><td class="muted">${f.why}</td><td>${f.check}</td><td class="small">${f.owner}</td></tr>`)}</tbody>
+      </table></div>` : null}
+      ${verify.length ? html`<div class="card-pad" style="border-top:1px solid var(--line)"><b>Tri čísla, ktoré overte pred odoslaním</b>
+        <ol class="sanity-verify">${verify.map((v) => html`<li><b>${v.line}</b>: ${v.value} <span class="muted">(${v.why})</span> <span class="faint small">· overí ${v.owner}</span></li>`)}</ol></div>` : null}
+    </div>`;
   }
 
   function StepResult({ ctx, draft, upd }) {
-    const { result: r, house, baseParams, studyParams, variants, outdoor, check } = useMemo(() => computeFor(ctx, draft), [draft.study, draft.baseOverrides, draft.baseHouseId, draft.finish, draft.variantSel, ctx.prices, ctx.settings]);
+    const { result: r, house, baseParams, studyParams, variants, outdoor, check, sanity } = useMemo(() => computeFor(ctx, draft), [draft.study, draft.baseOverrides, draft.baseHouseId, draft.finish, draft.variantSel, ctx.prices, ctx.settings]);
     const toggleSel = (id) => { const cur = draft.variantSel || []; upd({ variantSel: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] }); };
     const [detail, setDetail] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -2037,6 +2061,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
             optimizations: r.optimizations.map(({ patch, ...o }) => o),
             variants: variants.map(({ id, name, estimate, changePct }) => ({ id, name, estimate: Math.round(estimate), changePct })),
             outdoor: { inclVat: Math.round(outdoor.inclVat), exclVat: Math.round(outdoor.exclVat), missing: outdoor.missing },
+            sanity: sanity ? { counts: sanity.counts, findings: sanity.findings.map((f) => ({ id: f.id, severity: f.severity, line: f.line, what: f.what })) } : null,
             check: check ? { median: Math.round(check.median), low: Math.round(check.low), high: Math.round(check.high), devPct: Math.round(check.devPct * 10) / 10, peers: check.peers.map((p) => ({ name: p.name, estimate: Math.round(p.estimate) })) } : null,
           },
           priceListVersion: ctx.priceList.version || "", status: "hotový", createdAt: draft.createdAt || Date.now(), updatedAt: Date.now(),
@@ -2089,6 +2114,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
           : html` Odhad z domu ${house.name} sedí s ostatnými domami (${fmtNum(check.devPct, 1)} %).`}
         <div class="small muted" style="margin-top:4px">${check.peers.map((p) => `${p.name} ${fmtEur(p.estimate)}`).join(" · ")}</div>
       </div></div>` : null}
+      <${SanityCard} sanity=${sanity} admin=${caps.admin} />
       <div class="card">
         <div class="card-head"><div><h2>Čo cenu ovplyvnilo najviac</h2><div class="sub">Rozdiel voči domu ${house.name}, s DPH</div></div>
           <button class="btn plain sm" onClick=${() => setDetail(!detail)}>${detail ? "Skryť rozpis" : "Celý rozpis"}</button></div>
