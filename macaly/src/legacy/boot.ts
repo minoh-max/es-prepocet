@@ -143,10 +143,6 @@ export async function boot(convexUrl: string) {
   }
   const origFetch = window.fetch.bind(window)
   window.fetch = (async (input: any, init?: any) => {
-    // číselník s výrobnými cenami nie je verejný súbor – adresu dostane len prihlásený
-    if (typeof input === "string" && /(^|\/)data\/ciselnik\.json$/.test(input)) {
-      try { const r: any = await a(api.esSystem.priceListUrl, {}); return await origFetch(r.url, init) } catch { return new Response(null, { status: 404 }) }
-    }
     const id = typeof input === "string" ? blobId(input) : null
     if (!id) return origFetch(input, init)
     try { return await origFetch(await blobUrl(id), init) } catch { return new Response(null, { status: 404 }) }
