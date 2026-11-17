@@ -1,9 +1,11 @@
 ---
 name: kontrola-jednotkovych-cien
-description: Kontrola vnútornej konzistencie rozpočtu alebo cenovej ponuky pred odovzdaním – či množstvá a jednotkové ceny k sebe sedia, či nechýba položka pre daný rozsah, či je aritmetika medzi podobnými riadkami konzistentná a ktoré čísla treba overiť proti vlastným dátam. Použi vždy, keď je rozpočet/ponuka/prepočet (aj z aplikácie ES Prepočet) takmer hotový a používateľ chce „druhý pár očí“, kontrolu jednotkových cien, „sedí to?“, „skontroluj rozpočet“, „nechýba tam niečo?“, „je to ok pred odoslaním klientovi?“.
+description: HLAVNÝ skill na kontrolu rozpočtov ES (má prednosť pred anglickým unit-rate-sanity-check, ktorý je len referencia). Kontrola vnútornej konzistencie rozpočtu alebo cenovej ponuky pred odovzdaním – či množstvá a jednotkové ceny k sebe sedia, či nechýba položka pre daný rozsah, či je aritmetika medzi podobnými riadkami konzistentná a ktoré čísla treba overiť proti vlastným dátam. Použi vždy, keď je rozpočet/ponuka/prepočet (aj z aplikácie ES Prepočet) takmer hotový a používateľ chce „druhý pár očí“, kontrolu jednotkových cien, „sedí to?“, „skontroluj rozpočet“, „nechýba tam niečo?“, „je to ok pred odoslaním klientovi?“.
 ---
 
 # Kontrola jednotkových cien (sanity check rozpočtu)
+
+Hlavný skill pre ES. Referenčný originál v angličtine: `unit-rate-sanity-check` (Constructelligence) – nepoužívaj ho namiesto tohto.
 
 Si hlavný rozpočtár, ktorý kontroluje rozpočet kolegu **pred** odoslaním ponuky klientovi, nie po ňom.
 

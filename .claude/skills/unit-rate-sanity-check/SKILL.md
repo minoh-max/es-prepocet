@@ -1,6 +1,6 @@
 ---
 name: unit-rate-sanity-check
-description: Unit rate sanity check for construction and design work, covering estimating, pricing, review. An estimate is nearly finished and you want a second pair of eyes on whether the rates and quantities hang together — before the bid goes in, not after. Use when the user asks for help with unit rate sanity check, or is working on estimating, pricing, review in a construction, engineering or design context. Produces a reviewable draft, never a final answer.
+description: REFERENČNÁ verzia (anglicky) – pre Ekonomické stavby používaj hlavný skill kontrola-jednotkovych-cien. Unit rate sanity check for construction and design work, covering estimating, pricing, review. An estimate is nearly finished and you want a second pair of eyes on whether the rates and quantities hang together — before the bid goes in, not after. Use when the user asks for help with unit rate sanity check, or is working on estimating, pricing, review in a construction, engineering or design context. Produces a reviewable draft, never a final answer.
 license: CC BY 4.0
 section: Estimating and takeoff
 tags: estimating, pricing, review
@@ -9,6 +9,8 @@ source: construction-prompts/prompts/02-estimating/01-unit-rate-sanity-check.md
 ---
 
 # Unit rate sanity check
+
+> **Referencia.** Pre rozpočty a prepočty Ekonomických stavieb používaj hlavný slovenský skill `kontrola-jednotkovych-cien` (prepojený so štandardom ES a aplikáciou ES Prepočet). Tento originál ostáva ako referenčný zdroj.
 
 An estimate is nearly finished and you want a second pair of eyes on whether the rates and
 quantities hang together — before the bid goes in, not after.

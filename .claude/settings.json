@@ -4,5 +4,9 @@
       "mcp__Macaly_Cloud",
       "mcp__Macaly_Cloud__*"
     ]
+  },
+  "skillOverrides": {
+    "unit-rate-sanity-check": "user-invocable-only",
+    "anthropic-skills:unit-rate-sanity-check": "user-invocable-only"
   }
 }
