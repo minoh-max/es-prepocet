@@ -7,3 +7,5 @@ test/shots/
 .netlify/
 .superpowers/
 test/.engine.test.js
+__pycache__/
+*.pyc
