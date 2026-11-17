@@ -1,322 +1,58 @@
 ---
-name: "estimate-builder"
-description: "Build construction project estimates. Generate detailed cost breakdowns with labor, materials, equipment, and overhead."
-homepage: "https://datadrivenconstruction.io"
-metadata: {"openclaw":{"emoji":"📊","os":["darwin","linux","win32"],"homepage":"https://datadrivenconstruction.io","requires":{"bins":["python3"]}}}
+name: estimate-builder
+description: Zostavenie položkového rozpočtu rodinného domu v štruktúre rozpočtu Ekonomických stavieb (ES) – kapitoly HUS, ZR, A1–A5, B1–B8, C1, C2, rekapitulácia s presunom hmôt, GZS, ziskom a réžiou, zľavou za projekt (C1 − 650 €) a DPH, export do Excelu (krycí list, rekapitulácia, položky). Použi, keď treba z výkazu výmer alebo zo štúdie poskladať položkový rozpočet ES, prepočítať rekapituláciu, overiť súčty rozpočtu ES, alebo pripraviť rozpočet do Excelu – aj keď používateľ povie len „sprav rozpočet po položkách“, „poskladaj to do rekapitulácie“, „koľko to vyjde s GZS a ziskom“.
+license: MIT (upravené z DDC estimate-builder, © 2026 DataDrivenConstruction)
 ---
 
-# Estimate Builder
+# Položkový rozpočet ES (estimate builder)
 
-## Business Case
+Skladá rozpočet presne podľa rekapitulácie rozpočtov ES. Výpočet je v `scripts/es_rozpocet.py` (Python, pandas + openpyxl na export).
+**Overené:** z kapitol rozpočtov 106/26 a 226/21 vychádza bez DPH na 0,01 € a konečná suma s DPH presne (201 079 €, 207 285 €).
 
-### Problem Statement
-Estimate creation challenges:
-- Complex cost structures
-- Multiple cost categories
-- Markup calculations
-- Format requirements vary
+## Kedy ktorý nástroj
+- **Rýchly odhad zo štúdie** (katalógový dom ± rozdiely, medián z 5 domov) → aplikácia ES Prepočet / skill `rozpoctar-es`.
+- **Položkový rozpočet** (výmery × jednotkové ceny číselníka ES → rekapitulácia) → tento skill.
+- **Kontrola hotového rozpočtu** → `kontrola-jednotkovych-cien`; **spresnenie podľa skutočných rozpočtov** → `kalibracia-rozpoctov`.
 
-### Solution
-Structured estimate builder that creates professional construction estimates with proper cost categorization, markups, and export capabilities.
+## Rekapitulácia ES (ako počíta skript)
+| Riadok | Výpočet |
+|---|---|
+| HUS – hrubá uzatvorená stavba | položky v nákladových cenách × 1,486 (celkový faktor HUS 1,6 vrátane GZS a zisku) |
+| ZR – Šikovné ručičky | položky + presun hmôt 2 % |
+| A – HSV, B – PSV | položky + presun hmôt 2 % **bez dodávok GD** |
+| Dodávky GD (tepelné čerpadlo, rozšírenie TČ, rekuperácia) | v kapitole B2, **bez presunu a bez GZS** (`dodavka: true`) |
+| GZS | 3,5 % z (MO + HSV + PSV − dodávky) |
+| Zisk a réžia | 4 % z (základ GZS + GZS + C2) |
+| Celkom bez DPH | MO + HSV + PSV + GZS + C2 + zisk + C1 |
+| Zľava | −(C1 − 650 €) – projekt sa klientovi kompenzuje |
+| S DPH | (bez DPH + zľava) × 1,23, zaokrúhlené na celé € |
 
-## Technical Implementation
+Ostatné položky (mimo HUS) majú tým celkový faktor ≈ 1,098 – rovnako ako v aplikácii.
 
-```python
-import pandas as pd
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, field
-from datetime import date
-from enum import Enum
+## Postup
+1. **Vstupy** – ak chýbajú, vypýtaj si ich; nič nevymýšľaj:
+   - výmery z výkresov (kontrola-vykresov / rozpoctar-es) s odkazom na výkres a kótu,
+   - jednotkové ceny z **číselníka ES** (nie trhové odhady; chýbajúcu cenu označ „doplniť“),
+   - zákazka, investor, umiestnenie (k. ú., p. č.), projekt C1.
+2. **Zaraď každú položku do kapitoly** podľa rozpočtu ES (napr. okná, krov, krytina, murivo → HUS; omietky, podlahy → ZR alebo A4; inštalácie → B2; obklady → B6). Tepelné čerpadlo a rekuperáciu označ ako dodávku GD.
+3. **Zapíš JSON** a spusti skript:
+   ```json
+   {"zakazka": "106/26", "investor": "…", "umiestnenie": "k.ú. …, p.č. …",
+    "polozky": [
+      {"kapitola": "HUS", "popis": "stena z muriva Porobeton hr. 250 mm", "mj": "m2", "mnozstvo": 92.06, "jcena": 61.5},
+      {"kapitola": "B2", "popis": "tepelné čerpadlo – základná zostava", "mj": "sb", "mnozstvo": 1, "jcena": 9218.20, "dodavka": true},
+      {"kapitola": "C1", "popis": "projektová príprava a inžinierska činnosť", "mj": "sb", "mnozstvo": 1, "jcena": 23076}
+    ]}
+   ```
+   `python3 scripts/es_rozpocet.py rozpocet.json rozpocet.xlsx` – vypíše „Na overenie“, rekapituláciu a uloží Excel (Krycí list, Rekapitulácia, Položky).
+4. **Kontrola** – prejdi hlásenia skriptu (nulové množstvo, chýbajúca cena, chýbajúce C1, dodávka mimo A/B), potom kontrolu konzistencie (`kontrola-jednotkovych-cien`).
+5. **Výstup** – rekapitulácia a konečná suma s DPH; zoznam položiek s odhadnutou výmerou a vecí na overenie u klienta.
 
+## Zásady
+- Klientovi ukazuj len klientske ceny s DPH; nákladové ceny číselníka sú interné (len administrátor).
+- Rozhodnutia klienta po štúdii (farba okien, sprchový kút, schody, OSB obklady…) nedopĺňaj sám – uveď ich ako otázky.
+- Rozpočty a údaje klientov nedávaj na GitHub ani na verejné adresy.
+- HUS faktor 1,6 je kalibrovaný na rozpočtoch ES; ak máš k zákazke súpis „Stavba“ (výrobné náklady) aj „Klient“, over ho a prípadnú odchýlku zapíš do skillu `kalibracia-rozpoctov`.
 
-class CostCategory(Enum):
-    LABOR = "labor"
-    MATERIAL = "material"
-    EQUIPMENT = "equipment"
-    SUBCONTRACTOR = "subcontractor"
-    OTHER = "other"
-
-
-@dataclass
-class EstimateLineItem:
-    line_number: int
-    wbs_code: str
-    description: str
-    quantity: float
-    unit: str
-    unit_cost: float
-    category: CostCategory
-    notes: str = ""
-
-    @property
-    def total_cost(self) -> float:
-        return round(self.quantity * self.unit_cost, 2)
-
-
-@dataclass
-class CostSummary:
-    labor: float = 0
-    material: float = 0
-    equipment: float = 0
-    subcontractor: float = 0
-    other: float = 0
-
-    @property
-    def direct_cost(self) -> float:
-        return self.labor + self.material + self.equipment + self.subcontractor + self.other
-
-
-@dataclass
-class Markup:
-    name: str
-    rate: float  # As decimal (0.10 = 10%)
-    base: str = "direct"  # "direct" or "subtotal"
-
-
-class EstimateBuilder:
-    """Build construction project estimates."""
-
-    def __init__(self, project_name: str, project_number: str = ""):
-        self.project_name = project_name
-        self.project_number = project_number
-        self.estimate_date = date.today()
-        self.items: List[EstimateLineItem] = []
-        self.markups: List[Markup] = []
-        self._next_line = 1
-
-    def add_item(self,
-                 wbs_code: str,
-                 description: str,
-                 quantity: float,
-                 unit: str,
-                 unit_cost: float,
-                 category: CostCategory = CostCategory.OTHER,
-                 notes: str = "") -> EstimateLineItem:
-        """Add line item to estimate."""
-
-        item = EstimateLineItem(
-            line_number=self._next_line,
-            wbs_code=wbs_code,
-            description=description,
-            quantity=quantity,
-            unit=unit,
-            unit_cost=unit_cost,
-            category=category,
-            notes=notes
-        )
-        self.items.append(item)
-        self._next_line += 1
-        return item
-
-    def add_markup(self, name: str, rate: float, base: str = "direct"):
-        """Add markup (overhead, profit, contingency, etc.)."""
-        self.markups.append(Markup(name=name, rate=rate, base=base))
-
-    def set_standard_markups(self,
-                             overhead: float = 0.15,
-                             profit: float = 0.10,
-                             contingency: float = 0.05):
-        """Set standard construction markups."""
-
-        self.markups = [
-            Markup("General Conditions / Overhead", overhead, "direct"),
-            Markup("Profit", profit, "subtotal"),
-            Markup("Contingency", contingency, "subtotal")
-        ]
-
-    def get_cost_summary(self) -> CostSummary:
-        """Get cost summary by category."""
-
-        summary = CostSummary()
-        for item in self.items:
-            cost = item.total_cost
-            if item.category == CostCategory.LABOR:
-                summary.labor += cost
-            elif item.category == CostCategory.MATERIAL:
-                summary.material += cost
-            elif item.category == CostCategory.EQUIPMENT:
-                summary.equipment += cost
-            elif item.category == CostCategory.SUBCONTRACTOR:
-                summary.subcontractor += cost
-            else:
-                summary.other += cost
-        return summary
-
-    def calculate_total(self) -> Dict[str, Any]:
-        """Calculate total estimate with markups."""
-
-        summary = self.get_cost_summary()
-        direct_cost = summary.direct_cost
-
-        markups_detail = []
-        subtotal = direct_cost
-
-        for markup in self.markups:
-            if markup.base == "direct":
-                amount = direct_cost * markup.rate
-            else:
-                amount = subtotal * markup.rate
-
-            markups_detail.append({
-                'name': markup.name,
-                'rate': f"{markup.rate * 100:.1f}%",
-                'amount': round(amount, 2)
-            })
-            subtotal += amount
-
-        return {
-            'cost_summary': {
-                'labor': round(summary.labor, 2),
-                'material': round(summary.material, 2),
-                'equipment': round(summary.equipment, 2),
-                'subcontractor': round(summary.subcontractor, 2),
-                'other': round(summary.other, 2),
-                'direct_cost': round(direct_cost, 2)
-            },
-            'markups': markups_detail,
-            'total_markups': round(subtotal - direct_cost, 2),
-            'grand_total': round(subtotal, 2)
-        }
-
-    def get_items_by_wbs(self) -> Dict[str, List[EstimateLineItem]]:
-        """Group items by WBS code prefix."""
-
-        by_wbs = {}
-        for item in self.items:
-            prefix = item.wbs_code.split('.')[0] if '.' in item.wbs_code else item.wbs_code
-            if prefix not in by_wbs:
-                by_wbs[prefix] = []
-            by_wbs[prefix].append(item)
-        return by_wbs
-
-    def import_from_df(self, df: pd.DataFrame):
-        """Import line items from DataFrame."""
-
-        for _, row in df.iterrows():
-            self.add_item(
-                wbs_code=str(row.get('wbs_code', '')),
-                description=row['description'],
-                quantity=float(row['quantity']),
-                unit=row['unit'],
-                unit_cost=float(row['unit_cost']),
-                category=CostCategory(row.get('category', 'other').lower()),
-                notes=row.get('notes', '')
-            )
-
-    def export_to_df(self) -> pd.DataFrame:
-        """Export estimate to DataFrame."""
-
-        data = []
-        for item in self.items:
-            data.append({
-                'Line': item.line_number,
-                'WBS': item.wbs_code,
-                'Description': item.description,
-                'Qty': item.quantity,
-                'Unit': item.unit,
-                'Unit Cost': item.unit_cost,
-                'Total': item.total_cost,
-                'Category': item.category.value,
-                'Notes': item.notes
-            })
-        return pd.DataFrame(data)
-
-    def export_to_excel(self, output_path: str) -> str:
-        """Export estimate to Excel."""
-
-        totals = self.calculate_total()
-
-        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-            # Cover sheet
-            cover_df = pd.DataFrame([{
-                'Project Name': self.project_name,
-                'Project Number': self.project_number,
-                'Estimate Date': self.estimate_date,
-                'Total Items': len(self.items),
-                'Direct Cost': totals['cost_summary']['direct_cost'],
-                'Grand Total': totals['grand_total']
-            }])
-            cover_df.to_excel(writer, sheet_name='Summary', index=False)
-
-            # Line items
-            items_df = self.export_to_df()
-            items_df.to_excel(writer, sheet_name='Line Items', index=False)
-
-            # Cost breakdown
-            breakdown_df = pd.DataFrame([totals['cost_summary']])
-            breakdown_df.to_excel(writer, sheet_name='Cost Breakdown', index=False)
-
-            # Markups
-            if totals['markups']:
-                markups_df = pd.DataFrame(totals['markups'])
-                markups_df.to_excel(writer, sheet_name='Markups', index=False)
-
-        return output_path
-
-    def validate(self) -> List[str]:
-        """Validate estimate for common issues."""
-
-        issues = []
-
-        if not self.items:
-            issues.append("Estimate has no line items")
-
-        for item in self.items:
-            if item.quantity <= 0:
-                issues.append(f"Line {item.line_number}: Invalid quantity")
-            if item.unit_cost < 0:
-                issues.append(f"Line {item.line_number}: Negative unit cost")
-            if not item.description:
-                issues.append(f"Line {item.line_number}: Missing description")
-
-        if not self.markups:
-            issues.append("No markups defined (overhead, profit)")
-
-        return issues
-```
-
-## Quick Start
-
-```python
-# Create estimate
-estimate = EstimateBuilder("Office Building A", "PRJ-2024-001")
-
-# Add line items
-estimate.add_item("01.01", "Site Preparation", 5000, "SF", 2.50, CostCategory.OTHER)
-estimate.add_item("03.01", "Concrete Foundation", 200, "CY", 350, CostCategory.MATERIAL)
-estimate.add_item("03.02", "Foundation Formwork", 1500, "SF", 8.50, CostCategory.LABOR)
-estimate.add_item("05.01", "Structural Steel", 50, "TON", 4500, CostCategory.SUBCONTRACTOR)
-
-# Set markups
-estimate.set_standard_markups(overhead=0.15, profit=0.10, contingency=0.05)
-
-# Calculate total
-result = estimate.calculate_total()
-print(f"Direct Cost: ${result['cost_summary']['direct_cost']:,.2f}")
-print(f"Grand Total: ${result['grand_total']:,.2f}")
-```
-
-## Common Use Cases
-
-### 1. Cost by Category
-```python
-summary = estimate.get_cost_summary()
-print(f"Labor: ${summary.labor:,.2f}")
-print(f"Material: ${summary.material:,.2f}")
-```
-
-### 2. Export to Excel
-```python
-estimate.export_to_excel("estimate_output.xlsx")
-```
-
-### 3. Validate Estimate
-```python
-issues = estimate.validate()
-for issue in issues:
-    print(f"Warning: {issue}")
-```
-
-## Resources
-- **DDC Book**: Chapter 3.1 - Cost Calculations and Estimates
-- **Website**: https://datadrivenconstruction.io
+---
+Upravené z „estimate-builder“ (DDC Skills for AI Agents in Construction) – MIT License, © 2026 DataDrivenConstruction. Zmeny: štruktúra a rekapitulácia rozpočtu ES, slovenčina, export v podobe ES.
