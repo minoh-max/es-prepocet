@@ -17,7 +17,7 @@ const normEmail = (e) => String(e || "").trim().toLowerCase();
 const validPath = (p) => typeof p === "string" && /^[A-Za-z0-9_\-.~:@+]{1,200}(\/[A-Za-z0-9_\-.~:@+]{1,200}){0,14}$/.test(p) && !p.split("/").some((s) => s === "." || s === "..");
 
 function publicUser(u) {
-  return { id: u.id, email: u.email, name: u.name, role: u.role, active: u.active, mustChange: u.must_change, createdAt: Number(u.created_at) };
+  return { id: u.id, email: u.email, name: u.name, role: u.role, active: u.active, mustChange: u.must_change, itemized: !!u.itemized, createdAt: Number(u.created_at) };
 }
 
 function parseCookies(h) {
@@ -133,6 +133,26 @@ function createApp(pool, opts = {}) {
     } catch (e) { next(e); }
   });
 
+  // Overenie hesla pred odomknutím položkového rozpočtu (prístup má admin alebo používateľ, ktorému ho admin povolil).
+  app.post("/api/auth/verify", json, auth(), async (req, res, next) => {
+    try {
+      const u = req.user;
+      if (u.role !== "admin" && !u.itemized) return res.status(403).json({ error: "Prístup k položkovému rozpočtu vám musí povoliť administrátor.", code: "forbidden" });
+      const key = ("verify|" + u.id).slice(0, 300);
+      const fr = await pool.query("SELECT n, until_at FROM login_fails WHERE key = $1", [key]);
+      const f = fr.rows[0] ? { n: Number(fr.rows[0].n), until: Number(fr.rows[0].until_at) } : null;
+      if (f && f.n >= 5 && f.until > now()) return res.status(429).json({ error: "Priveľa neúspešných pokusov. Skúste to znova o 15 minút.", code: "locked" });
+      if (!(await bcrypt.compare(String((req.body && req.body.password) || ""), u.pass_hash))) {
+        const n = (f && f.until > now() ? f.n : 0) + 1;
+        if (f) await pool.query("UPDATE login_fails SET n = $1, until_at = $2 WHERE key = $3", [n, now() + 15 * 60e3, key]);
+        else await pool.query("INSERT INTO login_fails (key, n, until_at) VALUES ($1, $2, $3)", [key, n, now() + 15 * 60e3]);
+        return res.status(401).json({ error: "Nesprávne heslo.", code: "bad_password" });
+      }
+      if (f) await pool.query("DELETE FROM login_fails WHERE key = $1", [key]);
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  });
+
   // ---- správa používateľov (admin) ----
   app.get("/api/users", auth("admin"), async (req, res, next) => {
     try {
@@ -166,6 +186,7 @@ function createApp(pool, opts = {}) {
       if (u.id === req.user.id && (b.active === false || (b.role && b.role !== "admin"))) return res.status(400).json({ error: "Svoj vlastný účet nemôžete deaktivovať ani mu odobrať práva administrátora.", code: "self" });
       if (b.name !== undefined) await pool.query("UPDATE users SET name = $1 WHERE id = $2", [String(b.name).trim(), u.id]);
       if (b.role !== undefined && ROLES.includes(b.role)) await pool.query("UPDATE users SET role = $1 WHERE id = $2", [b.role, u.id]);
+      if (b.itemized !== undefined) await pool.query("UPDATE users SET itemized = $1 WHERE id = $2", [!!b.itemized, u.id]);
       if (b.active !== undefined) {
         await pool.query("UPDATE users SET active = $1 WHERE id = $2", [!!b.active, u.id]);
         if (!b.active) await pool.query("DELETE FROM sessions WHERE user_id = $1", [u.id]);

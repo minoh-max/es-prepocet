@@ -195,6 +195,7 @@
       me,
       logout: async () => { await api("POST", "/api/auth/logout"); location.reload(); },
       changePassword: (current, next) => api("POST", "/api/auth/password", { current, next }),
+      verifyPassword: (password) => api("POST", "/api/auth/verify", { password }),
       users: {
         list: () => api("GET", "/api/users").then((r) => r.users),
         create: (u) => api("POST", "/api/users", u).then((r) => r.user),

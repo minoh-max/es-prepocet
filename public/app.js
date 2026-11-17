@@ -1097,6 +1097,96 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
       info: { title: `Odborný cenový odhad – ${est.clientName || house.name}`, author: rep.name || company.name },
     };
   }
+  // ---------- Položkový rozpočet v štruktúre ES (nadstavba – prístup povoľuje administrátor) ----------
+  // Rekapitulácia overená na rozpočtoch 106/26 a 226/21 (bez DPH ±0,01 €, s DPH presne):
+  // MO = HUS + ZR + presun 2 % zo ZR; HSV/PSV = A/B + presun 2 % bez dodávok GD; GZS 3,5 % z (MO + HSV + PSV − dodávky);
+  // zisk 4 % z (základ GZS + GZS + C2); bez DPH = MO + HSV + PSV + GZS + C2 + zisk + C1; zľava −(C1 − 650); DPH 23 %.
+  const ES_CHAPTERS = {
+    HUS: "Hrubá uzatvorená stavba", ZR: "Položky programu Šikovné ručičky",
+    A1: "Zemné práce a zakladanie stavieb", A2: "Konštrukcie zvislé a vodorovné", A4: "Úpravy povrchov, podlahy", A5: "Spevnené plochy, dlažby, komunikácie",
+    B1: "Izolácie proti vode, izolácie tepelné", B2: "Vnútorné zdravotno-technické inštalácie", B3: "Zriaďovacie predmety", B4: "Konštrukcie tesárske, klampiarske, krytiny",
+    B5: "Konštrukcie stolárske", B6: "Podlahy z dlaždíc a obklady keramické", B7: "Podlahy vlysové, parketové a povlakové", B8: "Dokončovacie práce a povrchové úpravy",
+    C1: "Projektovanie a inžinierska činnosť", C2: "Lešenie a použitie ťažkej mechanizácie",
+  };
+  /** Kapitola rozpočtu ES pre prvok výpočtu (podľa súpisu 106/26). */
+  const ELEMENT_CHAPTER = {
+    zemne: "HUS", zaklady: "HUS", zaklady_dt: "HUS", hydroizolacia: "HUS", murivo_obvodove: "HUS", murivo_vnutorne: "HUS", stropy: "HUS", vence: "HUS", preklady: "HUS",
+    krov: "HUS", krytina: "HUS", okna: "HUS", dvere_vchodove: "HUS", stresne_okna: "HUS", garaz: "HUS", komin_krb: "HUS",
+    pricky: "ZR", klampiarske: "ZR", zateplenie_fasady: "ZR", zateplenie_strechy: "ZR", izolacia_podlah: "ZR", omietky: "ZR", podlahy: "ZR",
+    elektro: "B2", zti: "B2", vykurovanie_rozvod: "B2", zdroj_tepla: "B2", rekuperacia: "B2", kupelne: "B3", dvere_vnutorne: "B5", obklady: "B6", lesenie: "C2",
+  };
+  const DELIVERY_ELEMENTS = ["zdroj_tepla", "rekuperacia"]; // dodávky GD – bez presunu hmôt a GZS
+  const ES_K = { presun: 0.02, gzs: 0.035, zisk: 0.04, vat: 0.23, keep: 650, hus: 1.6 / (1.035 * 1.04) };
+  const rc = (x) => Math.round((x + 1e-9) * 100) / 100;
+  /** Rekapitulácia rozpočtu ES z položiek { ch, qty, unit, cost (bez DPH, pri HUS nákladová cena), delivery }. */
+  function recapES(items) {
+    const ch = {}; for (const k of Object.keys(ES_CHAPTERS)) ch[k] = 0;
+    for (const it of items) ch[it.ch] = (ch[it.ch] || 0) + it.total;
+    for (const k of Object.keys(ch)) ch[k] = rc(k === "HUS" ? ch[k] * ES_K.hus : ch[k]);
+    const sumOf = (pre) => Object.keys(ch).filter((k) => k.startsWith(pre)).reduce((a, k) => a + ch[k], 0);
+    const dod = (pre) => items.filter((it) => it.delivery && it.ch.startsWith(pre)).reduce((a, it) => a + it.total, 0);
+    const A = sumOf("A"), B = sumOf("B"), dA = dod("A"), dB = dod("B");
+    const presunZR = rc(ch.ZR * ES_K.presun), presunA = rc((A - dA) * ES_K.presun), presunB = rc((B - dB) * ES_K.presun);
+    const MO = rc(ch.HUS + ch.ZR + presunZR), HSV = rc(A + presunA), PSV = rc(B + presunB);
+    const baseGzs = rc(MO + HSV + PSV - dA - dB), gzs = rc(baseGzs * ES_K.gzs);
+    const baseZisk = rc(baseGzs + gzs + ch.C2), zisk = rc(baseZisk * ES_K.zisk);
+    const exclVat = rc(MO + HSV + PSV + gzs + ch.C2 + zisk + ch.C1);
+    const discount = -Math.max(0, rc(ch.C1 - ES_K.keep));
+    return { chapters: ch, presunZR, presunA, presunB, MO, HSV, PSV, baseGzs, gzs, baseZisk, zisk, exclVat, vat: rc(exclVat * ES_K.vat), discount, discountVat: rc(discount * ES_K.vat), total: Math.round((exclVat + discount) * (1 + ES_K.vat)) };
+  }
+  /**
+   * Položkový rozpočet z výsledku odhadu: položky prvkov štúdie (množstvo × cena číselníka) roztriedené do kapitol ES,
+   * projekt C1 a dorovnanie na odborný odhad (položky štandardu ES, ktoré model zatiaľ nerozpisuje).
+   */
+  function buildItemized(result, opts = {}) {
+    const items = [];
+    for (const e of result.elements) {
+      if (e.key === "rezia_velkost") continue;
+      const ch = ELEMENT_CHAPTER[e.key] || "B8", delivery = DELIVERY_ELEMENTS.includes(e.key);
+      if (e.pricedBy === "firma" || !e.study.lines.length) {
+        // ceny firmy sú s DPH a prirážkami – prepočet späť na položku rozpočtu
+        if (!e.study.cost) continue;
+        const net = e.pricedBy === "firma" ? e.study.cost / (1 + ES_K.vat) / (delivery ? 1 : ch === "HUS" ? 1.6 : 1.02 * 1.035 * 1.04) : e.study.cost;
+        items.push({ ch, element: e.label, name: e.label + (e.study.materialLabel ? " – " + e.study.materialLabel : ""), unit: "sb", qty: 1, unitCost: rc(net), total: rc(net), delivery, source: e.pricedBy === "firma" ? "cena firmy" : "sadzba" });
+        continue;
+      }
+      for (const l of e.study.lines) {
+        if (!(l.quantity > 0)) continue;
+        items.push({ ch, element: e.label, code: l.pathCode, name: l.name, unit: l.unit, qty: rc(l.quantity), unitCost: rc(l.unitCost), total: rc(l.quantity * l.unitCost), delivery, source: l.pathCode ? "číselník" : "sadzba" });
+      }
+    }
+    const target = Math.round(result.estimateInclVat);
+    const c1 = opts.c1 != null && opts.c1 !== "" ? Math.round(+opts.c1) : contractNumbers(target).c1;
+    items.push({ ch: "C1", element: "Projekt", name: "Projektová príprava a inžinierska činnosť", unit: "sb", qty: 1, unitCost: c1, total: c1, source: "C1" });
+    // dorovnanie: položka v ZR (presun, GZS a zisk ako ostatné) tak, aby súčet s DPH = odborný odhad
+    const base = recapES(items);
+    const factor = (1 + ES_K.presun) * (1 + ES_K.gzs) * (1 + ES_K.zisk);
+    let fill = rc((target / (1 + ES_K.vat) - (base.exclVat + base.discount)) / factor);
+    const withFill = (f) => recapES([...items, { ch: "ZR", total: f, delivery: false }]);
+    for (let i = 0; i < 20 && withFill(fill).total !== target; i++) fill = rc(fill + (withFill(fill).total < target ? 0.5 : -0.5));
+    const fillItem = { ch: "ZR", element: "Dorovnanie", name: fill >= 0 ? "Ostatné položky štandardu ES (z katalógovej ceny, nerozpísané)" : "Korekcia na odborný odhad", unit: "sb", qty: 1, unitCost: fill, total: fill, source: "dorovnanie", fill: true };
+    const all = Math.abs(fill) >= 0.01 ? [...items, fillItem] : items;
+    const recap = recapES(all);
+    const modeled = recapES(items);
+    return { items: all, recap, fill, modeledTotal: modeled.total, target, c1, chapters: ES_CHAPTERS };
+  }
+  /** Export položkového rozpočtu do Excelu (Krycí list, Rekapitulácia, Položky). */
+  function itemizedWorkbook(it, meta = {}) {
+    const X = window.XLSX; const wb = X.utils.book_new(); const r = it.recap;
+    const cover = [["Položkový rozpočet – " + (meta.name || "Rodinný dom")], [], ["Identifikácia zákazky", meta.zakazka || ""], ["Investor", meta.investor || ""], ["Umiestnenie", meta.place || ""], ["Spracované dňa", fmtDate(Date.now())], [],
+      ["Celkové náklady bez DPH", r.exclVat], ["DPH 23 %", r.vat], ["Zľava (projekt C1 − 650 €)", r.discount], ["DPH zľavy", r.discountVat], ["Celkové náklady na stavbu vrátane DPH", r.total], [],
+      ["Položky z výpočtu (bez dorovnania), s DPH", it.modeledTotal], ["Dorovnanie na odborný odhad (bez DPH, v ZR)", it.fill]];
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(cover), "Krycí list");
+    const rek = [["Kód", "Kapitola", "Suma bez DPH"], ...Object.keys(ES_CHAPTERS).filter((k) => r.chapters[k]).map((k) => [k, ES_CHAPTERS[k], r.chapters[k]]),
+      ["", "Presun hmôt ZR 2 %", r.presunZR], ["", "Minimálny odber – celkom", r.MO], ["", "Presun hmôt HSV 2 %", r.presunA], ["", "Presun hmôt PSV 2 % (bez dodávok)", r.presunB],
+      ["", "GZS 3,5 % z " + r.baseGzs.toFixed(2), r.gzs], ["", "Zisk a réžia 4 % z " + r.baseZisk.toFixed(2), r.zisk], ["", "Celkové náklady bez DPH", r.exclVat]];
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(rek), "Rekapitulácia");
+    const pol = [["Kapitola", "Kód položky", "Popis", "M.j.", "Množstvo", "J.cena", "Celkom", "Prvok", "Dodávka GD", "Zdroj"],
+      ...it.items.map((x) => [x.ch, x.code || "", x.name, x.unit, x.qty, x.unitCost, x.total, x.element, x.delivery ? "áno" : "", x.source])];
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(pol), "Položky");
+    return new Blob([X.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  }
+
   // ---------- Zmluvný súpis prác a dodávok – 1. strana (investor) ----------
   // Rozloženie podľa súpisu ES (JasperReports). Projekt C1 je v cene bez DPH a klientovi sa kompenzuje zľavou
   // C1 − 650 €, preto konečná suma s DPH = cena domu z odhadu bez ohľadu na výšku C1.
@@ -1211,7 +1301,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     buildPrices, parsePriceListXlsx, diffPriceLists, mergeSettings, extrasFrom,
     ROLES, ROLE, roleItems, mapMaterial, processFile, readStudyWithAI, aiToStudy, mergePages, explainWithAI,
     layoutText, isTextPage, pagePrompt, textPrompt, OPENING_LABEL, OPENING_TYPES, FIXTURE_LABEL, FOUNDATION_LABEL, bathroomText, dtPieces, studySummary, groupNotes, initOutdoor, houseExtras,
-    blobToDataUrl, buildPdfDoc, pdfBlob, buildContractDoc, contractNumbers, priceLevel,
+    blobToDataUrl, buildPdfDoc, pdfBlob, buildContractDoc, contractNumbers, priceLevel, recapES, buildItemized, itemizedWorkbook, ES_CHAPTERS,
   };
 })();
 
@@ -1240,6 +1330,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     download: "M12 4v12M7 11l5 5 5-5M4 20h16",
     ext: "M14 4h6v6M20 4l-9 9M18 14v6H4V6h6",
     check: "M5 12.5 10 17l9-10",
+    lock: "M6 11V8a6 6 0 0 1 12 0v3M5 11h14v10H5z",
     x: "M6 6l12 12M18 6 6 18",
     back: "M15 5l-7 7 7 7",
     trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
@@ -1333,7 +1424,9 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         const [db, user, sample, assets, downloads] = await Promise.all(["db", "user", "sample", "assets", "downloads"].map(useCap));
         let me = null, id = null, admin = false;
         if (user) { try { [me, id, admin] = await Promise.all([user.me(), user.id(), user.canEdit()]); } catch (e) { /* signed out */ } }
-        caps.current = { db, user, sample, assets, downloads, me, uid: id, admin };
+        // položkový rozpočet: administrátor alebo používateľ, ktorému ho administrátor povolil
+        const itemized = !!admin || !!(window.ESServer && window.ESServer.me && window.ESServer.me.itemized);
+        caps.current = { db, user, sample, assets, downloads, me, uid: id, admin, itemized };
         setBoot((b) => ({ ...b, capsReady: true }));
         if (db) {
           db.doc("config/app").onSnapshot((s) => setConfig(s.exists ? s.data() : {}), () => {});
@@ -2195,6 +2288,79 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     </div>`;
   }
 
+  // Položkový rozpočet – nadstavba len pre administrátora a používateľov, ktorým ju administrátor povolil.
+  // Odomknutie platí do zatvorenia / obnovenia stránky.
+  const itemizedUnlocked = { ok: false };
+  function ItemizedUnlock({ ctx, onClose, onOk }) {
+    const [pw, setPw] = useState(""), [busy, setBusy] = useState(false), [err, setErr] = useState("");
+    const verify = window.ESServer && window.ESServer.verifyPassword;
+    async function go(e) {
+      e && e.preventDefault();
+      if (!verify) { if (ctx.caps.admin) onOk(); else setErr("Overenie hesla nie je v tejto verzii dostupné."); return; }
+      setBusy(true); setErr("");
+      try { await verify(pw); onOk(); } catch (x) { setErr((x && x.message) || "Heslo sa nepodarilo overiť."); }
+      setBusy(false);
+    }
+    return html`<${Sheet} onClose=${onClose}>
+      <form onSubmit=${go} id="itemized-unlock">
+        <div class="card-head"><div><h2>Položkový rozpočet</h2><div class="sub">Chránená sekcia – prístup povoľuje administrátor</div></div></div>
+        <div class="card-pad" style="display:flex;flex-direction:column;gap:12px">
+          <p style="margin:0">Na otvorenie položkového rozpočtu zadajte svoje heslo${ctx.caps.me && ctx.caps.me.email ? html` (účet <b>${ctx.caps.me.email}</b>)` : null}.</p>
+          ${verify ? html`<div class="field"><label for="it-pw">Heslo</label><input id="it-pw" class="input" type="password" autocomplete="current-password" value=${pw} onInput=${(e) => setPw(e.target.value)} autofocus /></div>` : null}
+          ${err ? html`<div class="notice alert"><div>${err}</div></div>` : null}
+          <div class="row" style="justify-content:flex-end"><button type="button" class="btn" onClick=${onClose}>Zrušiť</button><button class="btn primary" disabled=${busy || (verify && !pw)}>${busy ? html`<span class="spinner"></span>` : null}Odomknúť</button></div>
+        </div>
+      </form>
+    <//>`;
+  }
+  function ItemizedView({ ctx, draft, r, house }) {
+    const it = useMemo(() => L.buildItemized(r, { c1: draft.contract && draft.contract.c1 }), [r, draft.contract && draft.contract.c1]);
+    const [open, setOpen] = useState({});
+    const rc = it.recap, money = (v) => fmtNum(v, 2);
+    const groups = [];
+    for (const k of Object.keys(it.chapters)) { const items = it.items.filter((x) => x.ch === k); if (items.length) groups.push([k, items]); }
+    const modeledPct = it.target ? (it.modeledTotal / it.target - 1) * 100 : 0;
+    async function exportXlsx() {
+      if (!ctx.caps.downloads) { ctx.say("Export je dostupný len v aplikácii otvorenej v prehliadači."); return; }
+      try {
+        const pr = draft.project || {};
+        const blob = L.itemizedWorkbook(it, { zakazka: pr.zakazka, investor: draft.clientName, place: [pr.katastralne && "k.ú. " + pr.katastralne, pr.parcela && "p.č. " + pr.parcela].filter(Boolean).join(", ") });
+        const safe = [String(pr.zakazka || "").replace(/\s*\/\s*/, "-"), draft.clientName || house.name].filter(Boolean).join("_").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9-]+/g, "_");
+        await ctx.caps.downloads.save({ filename: `Polozkovy_rozpocet_${safe}.xlsx`, data: blob });
+        ctx.say("Excel je pripravený");
+      } catch (e) { if (!(e && e.code === "declined")) ctx.say("Excel sa nepodarilo vytvoriť."); }
+    }
+    return html`<div id="itemized">
+      <div class="kpis">
+        <div class="card kpi"><div class="kpi-label">Celkové náklady bez DPH</div><div class="kpi-value num">${fmtEur(rc.exclVat)}</div><div class="kpi-sub">vrátane projektu C1 ${fmtEur(it.c1)}</div></div>
+        <div class="card kpi"><div class="kpi-label">Zľava (projekt C1 − 650 €)</div><div class="kpi-value num">${fmtEur(rc.discount)}</div><div class="kpi-sub">DPH zľavy ${fmtEur(rc.discountVat)}</div></div>
+        <div class="card kpi hero"><div class="kpi-label">Celkové náklady vrátane DPH</div><div class="kpi-value num" id="itemized-total">${fmtEur(rc.total)}</div><div class="kpi-sub">= odborný odhad · ${house.name}</div></div>
+      </div>
+      <div class="notice"><div><b>Dorovnanie ${fmtEur(it.fill)} bez DPH</b> (žltý riadok v ZR) = položky štandardu ES, ktoré výpočet zatiaľ nerozpisuje. Samotné položky by dali ${fmtEur(it.modeledTotal)} s DPH (${fmtNum(modeledPct, 1)} % oproti odhadu). S ďalšími rozpočtami ES sa bude dorovnanie zmenšovať.</div></div>
+      <div class="card">
+        <div class="card-head"><div><h2>Rekapitulácia</h2><div class="sub">Ako v rozpočte ES – presun hmôt, GZS a zisk; tepelné čerpadlo a rekuperácia ako dodávka GD</div></div><button class="btn primary sm" onClick=${exportXlsx}><${Icon} name="download" />Excel</button></div>
+        <div class="table-wrap"><table class="t dense">
+          <thead><tr><th>Kód</th><th>Kapitola</th><th class="num">Suma bez DPH</th></tr></thead>
+          <tbody>${Object.keys(it.chapters).filter((k) => rc.chapters[k]).map((k) => html`<tr><td>${k}</td><td>${it.chapters[k]}</td><td class="num">${money(rc.chapters[k])}</td></tr>`)}
+            ${[["Presun hmôt ZR 2 %", rc.presunZR], ["Presun hmôt PSV 2 % (bez dodávok)", rc.presunB], [`GZS 3,5 % z ${money(rc.baseGzs)}`, rc.gzs], [`Zisk a réžia 4 % z ${money(rc.baseZisk)}`, rc.zisk]].map(([a, b]) => html`<tr class="muted"><td></td><td>${a}</td><td class="num">${money(b)}</td></tr>`)}
+            <tr><td></td><td><b>Celkové náklady bez DPH</b></td><td class="num"><b>${money(rc.exclVat)}</b></td></tr></tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h2>Položkový výkaz</h2><div class="sub">Výmery zo štúdie × jednotkové ceny číselníka ES (bez DPH; HUS v nákladových cenách)</div></div></div>
+        <div class="table-wrap"><table class="t dense">
+          <thead><tr><th>Popis práce a dodávky</th><th>M.j.</th><th class="num">Množstvo</th><th class="num">J.cena</th><th class="num">Celkom</th><th>Prvok</th></tr></thead>
+          <tbody>${groups.map(([k, items]) => {
+            const show = open[k] || items.length <= 6 ? items : [...items.slice(0, 5), ...items.slice(5).filter((x) => x.fill)];
+            return html`<tr class="it-grp"><td colspan="6"><b>${k} · ${it.chapters[k]}</b> <span class="faint small">(${items.length} položiek, ${money(items.reduce((a, x) => a + x.total, 0))} €)</span></td></tr>
+              ${show.map((x) => html`<tr class=${x.fill ? "it-fill" : ""}><td>${x.name}${x.delivery ? html` <span class="badge">dodávka GD</span>` : null}</td><td>${x.unit}</td><td class="num">${fmtNum(x.qty, 2)}</td><td class="num">${money(x.unitCost)}</td><td class="num">${money(x.total)}</td><td class="faint small">${x.element}</td></tr>`)}
+              ${show.length < items.length ? html`<tr><td colspan="6"><button class="btn plain sm" onClick=${() => setOpen({ ...open, [k]: true })}>Zobraziť všetkých ${items.length} položiek</button></td></tr>` : null}`;
+          })}</tbody>
+        </table></div>
+      </div>
+    </div>`;
+  }
+
   function StepResult({ ctx, draft, upd }) {
     const { result: r, house, baseParams, studyParams, variants, outdoor, check, sanity } = useMemo(() => computeFor(ctx, draft), [draft.study, draft.baseOverrides, draft.baseHouseId, draft.baseMode, draft.finish, draft.variantSel, ctx.prices, ctx.settings]);
     const toggleSel = (id) => { const cur = draft.variantSel || []; upd({ variantSel: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] }); };
@@ -2202,6 +2368,9 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     const [saving, setSaving] = useState(false);
     const [exporting, setExporting] = useState(false);
     const [contract, setContract] = useState(false);
+    const [tab, setTab] = useState("odhad");
+    const [unlocked, setUnlocked] = useState(itemizedUnlocked.ok);
+    const [askPw, setAskPw] = useState(false);
     const [summary, setSummary] = useState(draft.aiSummary || "");
     const [sumBusy, setSumBusy] = useState(false);
     const maxAbs = Math.max(1, ...r.topDrivers.map((d) => Math.abs(d.deltaInclVat)));
@@ -2269,7 +2438,16 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
       setSumBusy(false);
     }
 
+    const openItemized = () => { if (unlocked) setTab("polozky"); else setAskPw(true); };
+    const tabs = caps.itemized ? html`<div class="row" style="gap:6px;margin-bottom:12px" id="result-tabs">
+      <button class=${"btn sm" + (tab === "odhad" ? " primary" : "")} onClick=${() => setTab("odhad")}>Odborný odhad</button>
+      <button class=${"btn sm" + (tab === "polozky" ? " primary" : "")} onClick=${openItemized}><${Icon} name=${unlocked ? "check" : "lock"} />Položkový rozpočet${unlocked ? "" : " · zamknuté"}</button>
+    </div>
+    ${askPw ? html`<${ItemizedUnlock} ctx=${ctx} onClose=${() => setAskPw(false)} onOk=${() => { itemizedUnlocked.ok = true; setUnlocked(true); setAskPw(false); setTab("polozky"); }} />` : null}` : null;
+    if (caps.itemized && unlocked && tab === "polozky") return html`${tabs}<${ItemizedView} ctx=${ctx} draft=${draft} r=${r} house=${house} />`;
+
     return html`
+      ${tabs}
       <div class="kpis">
         <div class="card kpi kpi-house"><div class="grow"><div class="kpi-label">Východiskový dom</div><div class="kpi-value num">${fmtEur(r.basePriceInclVat)}</div><div class="kpi-sub">${house.name} · ${draft.finish === "holodom" ? "holodom" : "štandard"} · s DPH${check && check.useMedian ? " · medián z podobných domov" : ""}</div></div><div class="house-mini lg"><${HouseImg} h=${house} plan=${false} /></div></div>
         <div class="card kpi hero"><div class="kpi-label">Odborný cenový odhad</div><div class="kpi-value num">${fmtEur(r.estimateInclVat)}</div><div class="kpi-sub">rozpätie ${fmtEur(r.range.lowInclVat)} – ${fmtEur(r.range.highInclVat)} (±${fmtNum(r.range.bandPct, 1)} %)</div></div>
@@ -2701,7 +2879,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     const me = window.ESServer.me;
     const tok = (n) => (n >= 1e6 ? fmtNum(n / 1e6, 1) + " mil." : fmtNum(n / 1e3, 0) + " tis.");
     return html`
-      <div class="notice info"><div><b>Obchodník</b> robí a ukladá prepočty a vidí katalóg. <b>Administrátor</b> navyše spravuje používateľov, údaje firmy, číselník a nastavenia výpočtu. Nový používateľ si pri prvom prihlásení zmení heslo.</div></div>
+      <div class="notice info"><div><b>Obchodník</b> robí a ukladá prepočty a vidí katalóg. <b>Administrátor</b> navyše spravuje používateľov, údaje firmy, číselník a nastavenia výpočtu. <b>Položkový rozpočet</b> vidí administrátor a len tí používatelia, ktorým ho tu povolíte – pred otvorením ešte zadajú svoje heslo. Nový používateľ si pri prvom prihlásení zmení heslo.</div></div>
       ${shown ? html`<div class="notice"><div><b>Prihlasovacie údaje pre ${shown.email}</b><div style="margin-top:4px">Dočasné heslo: <code style="font-size:15px;user-select:all">${shown.password}</code></div><div class="small" style="margin-top:4px">Pošlite ich používateľovi. Heslo sa už nebude dať zobraziť znova; pri prvom prihlásení si ho zmení.</div></div><button class="btn plain sm" onClick=${() => setShown(null)}>Zavrieť</button></div>` : null}
       <div class="section-title">Pridať používateľa</div>
       <div class="card card-pad"><div class="mini-grid" style="padding:0">
@@ -2712,11 +2890,12 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
       </div><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn primary" onClick=${add}><${Icon} name="plus" />Pridať používateľa</button></div></div>
       <div class="section-title">Používatelia</div>
       <div class="card">${list === null ? html`<div class="empty"><div class="spinner"></div></div>` : html`<div class="table-wrap"><table class="t">
-        <thead><tr><th>Meno</th><th>E-mail</th><th>Rola</th><th>Stav</th><th class="num">AI tento mesiac</th><th>Od</th><th></th></tr></thead>
+        <thead><tr><th>Meno</th><th>E-mail</th><th>Rola</th><th>Položkový rozpočet</th><th>Stav</th><th class="num">AI tento mesiac</th><th>Od</th><th></th></tr></thead>
         <tbody>${list.map((u) => html`<tr>
           <td><b>${u.name || "–"}</b>${u.id === me.id ? html` <span class="badge accent">vy</span>` : null}</td>
           <td>${u.email}</td>
           <td><select class="input" style="min-width:140px" value=${u.role} disabled=${u.id === me.id} onChange=${(e) => patch(u, { role: e.target.value }, "Rola je zmenená")}><option value="sales">Obchodník</option><option value="admin">Administrátor</option></select></td>
+          <td>${u.role === "admin" ? html`<span class="faint small">áno (administrátor)</span>` : html`<label class="check" title="Povoliť prístup k položkovému rozpočtu"><input type="checkbox" data-itemized=${u.email} checked=${!!u.itemized} onChange=${(e) => patch(u, { itemized: e.target.checked }, e.target.checked ? "Položkový rozpočet je povolený" : "Položkový rozpočet je zakázaný")} />povolený</label>`}</td>
           <td>${u.active ? html`<span class="badge ok">aktívny</span>` : html`<span class="badge bad">vypnutý</span>`}${u.mustChange ? html` <span class="badge warn">čaká na zmenu hesla</span>` : null}</td>
           <td class="num">${u.aiThisMonth.calls ? html`${u.aiThisMonth.calls} volaní<div class="faint small">${tok(u.aiThisMonth.inputTokens)} / ${tok(u.aiThisMonth.outputTokens)} tokenov</div>` : "–"}</td>
           <td>${fmtDate(u.createdAt)}</td>

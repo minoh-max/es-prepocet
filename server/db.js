@@ -10,6 +10,7 @@ const SCHEMA = [
     pass_hash TEXT NOT NULL,
     active BOOLEAN NOT NULL DEFAULT TRUE,
     must_change BOOLEAN NOT NULL DEFAULT FALSE,
+    itemized BOOLEAN NOT NULL DEFAULT FALSE,
     created_at BIGINT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS sessions (
@@ -89,6 +90,8 @@ async function createPool(opts = {}) {
     try { await pool.query(SCHEMA.join(";\n")); }
     catch (e) { if (!["23505", "42P07"].includes(e.code)) throw e; await new Promise((r) => setTimeout(r, 300)); await pool.query(SCHEMA.join(";\n")); }
   }
+  // doplnenie stĺpca do existujúcej databázy (položkový rozpočet – prístup povoľuje administrátor)
+  try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS itemized BOOLEAN NOT NULL DEFAULT FALSE"); } catch (e) { /* stĺpec už existuje */ }
   return pool;
 }
 

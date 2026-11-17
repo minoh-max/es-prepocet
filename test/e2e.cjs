@@ -71,6 +71,17 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
       const est3 = (await page.textContent(".kpi.hero .kpi-value")).replace(/[^\d]/g, "");
       if (est3 !== (est || "").replace(/[^\d]/g, "")) fail("návrat na zvolený dom nevrátil pôvodný odhad");
     } else fail("chýba tlačidlo „Použiť medián“ pri odchýlke nad 3 %");
+    // položkový rozpočet: admin vidí záložku, odomkne ju heslom, súčet = odhad, export do Excelu
+    if (!(await page.$("#result-tabs"))) fail("administrátor nevidí záložku Položkový rozpočet");
+    await page.click("#result-tabs button:has-text('Položkový rozpočet')"); await page.waitForSelector("#itemized-unlock");
+    await page.fill("#it-pw", "zle-heslo"); await page.click("#itemized-unlock button:has-text('Odomknúť')"); await page.waitForSelector("#itemized-unlock .notice.alert");
+    await page.fill("#it-pw", "heslo12345"); await page.click("#itemized-unlock button:has-text('Odomknúť')"); await page.waitForSelector("#itemized");
+    const itTot = (await page.textContent("#itemized-total")).replace(/[^\d]/g, ""), estNow = (est || "").replace(/[^\d]/g, "");
+    console.log("položkový rozpočet:", itTot, "odhad:", estNow);
+    if (itTot !== estNow) fail("položkový rozpočet sa nerovná odhadu: " + itTot + " vs " + estNow);
+    await page.screenshot({ path: SHOTS + "/04c_itemized.png", fullPage: true });
+    const dlx = page.waitForEvent("download", { timeout: 15000 }); await page.click("#itemized button:has-text('Excel')"); console.log("excel:", (await dlx).suggestedFilename());
+    await page.click("#result-tabs button:has-text('Odborný odhad')"); await page.waitForSelector("#sanity-check");
     const sc = await page.textContent("#sanity-check").catch(() => null); console.log("kontrola rozpočtu:", (sc || "").replace(/\s+/g, " ").slice(0, 200)); if (!sc || !/Kontrola rozpočtu/.test(sc) || !/Tri čísla, ktoré overte/.test(sc)) fail("chýba kontrola rozpočtu");
     await page.click("#sanity-check button:has-text('Zobraziť')").catch(() => {}); await page.waitForTimeout(200); await page.locator("#sanity-check").screenshot({ path: SHOTS + "/04b_sanity.png" }).catch(() => {});
     await page.fill("#client-name", "Test klient").catch(() => {});
@@ -103,6 +114,14 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     const salesMenu = await page.$$eval(".nav-btn", (x) => x.map((n) => n.textContent.trim()));
     console.log("obchodník menu:", salesMenu.join(" | "));
     if (salesMenu.some((t) => /Číselník/.test(t))) fail("obchodník nesmie vidieť číselník (výrobné ceny)");
+    // obchodník bez povolenia administrátora položkový rozpočet nevidí
+    await page.click(".topbar >> text=Nový prepočet"); await page.waitForTimeout(600);
+    await page.click("button:has-text('Zadať údaje ručne')"); await page.waitForTimeout(800);
+    await page.click("button:has-text('Vybrať východiskový dom')"); await page.fill('input[placeholder^="Hľadať"]', "Lucie 89"); await page.waitForTimeout(500); await page.click("table.t tbody tr >> nth=0"); await page.waitForTimeout(500);
+    await page.click("text=Vypočítať odhad"); await page.waitForSelector(".kpi.hero .kpi-value");
+    if (await page.$("#result-tabs")) fail("obchodník bez povolenia vidí položkový rozpočet");
+    const vs = await page.evaluate(async () => (await fetch("/api/auth/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: "noveheslo1" }) })).status);
+    console.log("obchodník odomknutie bez povolenia (čakám 403):", vs); if (vs !== 403) fail("server pustil obchodníka bez povolenia");
     const r = await page.evaluate(async () => (await fetch("/api/doc", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "config/app", data: { x: 1 } }) })).status);
     console.log("obchodník zápis do nastavení (čakám 403):", r);
     await page.setViewportSize({ width: 390, height: 844 }); await page.goto(U); await page.waitForSelector(".topbar"); await page.waitForTimeout(500);

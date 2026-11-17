@@ -56,6 +56,21 @@ test("admin zakladá obchodníka, ten musí zmeniť heslo", async () => {
   assert.equal((await call("j", "GET", "/api/users")).status, 403);
 });
 
+test("položkový rozpočet: prístup povoľuje admin, odomknutie heslom", async () => {
+  assert.equal((await call("j", "POST", "/api/auth/verify", { password: "noveheslo1" })).status, 403);
+  const jan = (await call("j", "GET", "/api/auth/me")).body.user;
+  assert.equal(jan.itemized, false);
+  assert.equal((await call("j", "PATCH", "/api/users/" + jan.id, { itemized: true })).status, 403);
+  const p = await call("a", "PATCH", "/api/users/" + jan.id, { itemized: true });
+  assert.equal(p.status, 200); assert.equal(p.body.user.itemized, true);
+  assert.equal((await call("j", "GET", "/api/auth/me")).body.user.itemized, true);
+  assert.equal((await call("j", "POST", "/api/auth/verify", { password: "zle-heslo" })).status, 401);
+  assert.equal((await call("j", "POST", "/api/auth/verify", { password: "noveheslo1" })).status, 200);
+  assert.equal((await call("a", "POST", "/api/auth/verify", { password: "heslo12345" })).status, 200);
+  assert.equal((await call("a", "PATCH", "/api/users/" + jan.id, { itemized: false })).body.user.itemized, false);
+  assert.equal((await call("j", "POST", "/api/auth/verify", { password: "noveheslo1" })).status, 403);
+});
+
 test("oprávnenia dokumentov: obchodník len svoje, admin všetko", async () => {
   const me = (await call("j", "GET", "/api/auth/me")).body.user;
   assert.equal((await call("j", "PUT", "/api/doc", { path: "config/app", data: { a: 1 } })).status, 403);

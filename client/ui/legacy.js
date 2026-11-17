@@ -778,6 +778,79 @@
     </div>`;
   }
 
+  // Položkový rozpočet – nadstavba len pre administrátora a používateľov, ktorým ju administrátor povolil.
+  // Odomknutie platí do zatvorenia / obnovenia stránky.
+  const itemizedUnlocked = { ok: false };
+  function ItemizedUnlock({ ctx, onClose, onOk }) {
+    const [pw, setPw] = useState(""), [busy, setBusy] = useState(false), [err, setErr] = useState("");
+    const verify = window.ESServer && window.ESServer.verifyPassword;
+    async function go(e) {
+      e && e.preventDefault();
+      if (!verify) { if (ctx.caps.admin) onOk(); else setErr("Overenie hesla nie je v tejto verzii dostupné."); return; }
+      setBusy(true); setErr("");
+      try { await verify(pw); onOk(); } catch (x) { setErr((x && x.message) || "Heslo sa nepodarilo overiť."); }
+      setBusy(false);
+    }
+    return html`<${Sheet} onClose=${onClose}>
+      <form onSubmit=${go} id="itemized-unlock">
+        <div class="card-head"><div><h2>Položkový rozpočet</h2><div class="sub">Chránená sekcia – prístup povoľuje administrátor</div></div></div>
+        <div class="card-pad" style="display:flex;flex-direction:column;gap:12px">
+          <p style="margin:0">Na otvorenie položkového rozpočtu zadajte svoje heslo${ctx.caps.me && ctx.caps.me.email ? html` (účet <b>${ctx.caps.me.email}</b>)` : null}.</p>
+          ${verify ? html`<div class="field"><label for="it-pw">Heslo</label><input id="it-pw" class="input" type="password" autocomplete="current-password" value=${pw} onInput=${(e) => setPw(e.target.value)} autofocus /></div>` : null}
+          ${err ? html`<div class="notice alert"><div>${err}</div></div>` : null}
+          <div class="row" style="justify-content:flex-end"><button type="button" class="btn" onClick=${onClose}>Zrušiť</button><button class="btn primary" disabled=${busy || (verify && !pw)}>${busy ? html`<span class="spinner"></span>` : null}Odomknúť</button></div>
+        </div>
+      </form>
+    <//>`;
+  }
+  function ItemizedView({ ctx, draft, r, house }) {
+    const it = useMemo(() => L.buildItemized(r, { c1: draft.contract && draft.contract.c1 }), [r, draft.contract && draft.contract.c1]);
+    const [open, setOpen] = useState({});
+    const rc = it.recap, money = (v) => fmtNum(v, 2);
+    const groups = [];
+    for (const k of Object.keys(it.chapters)) { const items = it.items.filter((x) => x.ch === k); if (items.length) groups.push([k, items]); }
+    const modeledPct = it.target ? (it.modeledTotal / it.target - 1) * 100 : 0;
+    async function exportXlsx() {
+      if (!ctx.caps.downloads) { ctx.say("Export je dostupný len v aplikácii otvorenej v prehliadači."); return; }
+      try {
+        const pr = draft.project || {};
+        const blob = L.itemizedWorkbook(it, { zakazka: pr.zakazka, investor: draft.clientName, place: [pr.katastralne && "k.ú. " + pr.katastralne, pr.parcela && "p.č. " + pr.parcela].filter(Boolean).join(", ") });
+        const safe = [String(pr.zakazka || "").replace(/\s*\/\s*/, "-"), draft.clientName || house.name].filter(Boolean).join("_").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9-]+/g, "_");
+        await ctx.caps.downloads.save({ filename: `Polozkovy_rozpocet_${safe}.xlsx`, data: blob });
+        ctx.say("Excel je pripravený");
+      } catch (e) { if (!(e && e.code === "declined")) ctx.say("Excel sa nepodarilo vytvoriť."); }
+    }
+    return html`<div id="itemized">
+      <div class="kpis">
+        <div class="card kpi"><div class="kpi-label">Celkové náklady bez DPH</div><div class="kpi-value num">${fmtEur(rc.exclVat)}</div><div class="kpi-sub">vrátane projektu C1 ${fmtEur(it.c1)}</div></div>
+        <div class="card kpi"><div class="kpi-label">Zľava (projekt C1 − 650 €)</div><div class="kpi-value num">${fmtEur(rc.discount)}</div><div class="kpi-sub">DPH zľavy ${fmtEur(rc.discountVat)}</div></div>
+        <div class="card kpi hero"><div class="kpi-label">Celkové náklady vrátane DPH</div><div class="kpi-value num" id="itemized-total">${fmtEur(rc.total)}</div><div class="kpi-sub">= odborný odhad · ${house.name}</div></div>
+      </div>
+      <div class="notice"><div><b>Dorovnanie ${fmtEur(it.fill)} bez DPH</b> (žltý riadok v ZR) = položky štandardu ES, ktoré výpočet zatiaľ nerozpisuje. Samotné položky by dali ${fmtEur(it.modeledTotal)} s DPH (${fmtNum(modeledPct, 1)} % oproti odhadu). S ďalšími rozpočtami ES sa bude dorovnanie zmenšovať.</div></div>
+      <div class="card">
+        <div class="card-head"><div><h2>Rekapitulácia</h2><div class="sub">Ako v rozpočte ES – presun hmôt, GZS a zisk; tepelné čerpadlo a rekuperácia ako dodávka GD</div></div><button class="btn primary sm" onClick=${exportXlsx}><${Icon} name="download" />Excel</button></div>
+        <div class="table-wrap"><table class="t dense">
+          <thead><tr><th>Kód</th><th>Kapitola</th><th class="num">Suma bez DPH</th></tr></thead>
+          <tbody>${Object.keys(it.chapters).filter((k) => rc.chapters[k]).map((k) => html`<tr><td>${k}</td><td>${it.chapters[k]}</td><td class="num">${money(rc.chapters[k])}</td></tr>`)}
+            ${[["Presun hmôt ZR 2 %", rc.presunZR], ["Presun hmôt PSV 2 % (bez dodávok)", rc.presunB], [`GZS 3,5 % z ${money(rc.baseGzs)}`, rc.gzs], [`Zisk a réžia 4 % z ${money(rc.baseZisk)}`, rc.zisk]].map(([a, b]) => html`<tr class="muted"><td></td><td>${a}</td><td class="num">${money(b)}</td></tr>`)}
+            <tr><td></td><td><b>Celkové náklady bez DPH</b></td><td class="num"><b>${money(rc.exclVat)}</b></td></tr></tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h2>Položkový výkaz</h2><div class="sub">Výmery zo štúdie × jednotkové ceny číselníka ES (bez DPH; HUS v nákladových cenách)</div></div></div>
+        <div class="table-wrap"><table class="t dense">
+          <thead><tr><th>Popis práce a dodávky</th><th>M.j.</th><th class="num">Množstvo</th><th class="num">J.cena</th><th class="num">Celkom</th><th>Prvok</th></tr></thead>
+          <tbody>${groups.map(([k, items]) => {
+            const show = open[k] || items.length <= 6 ? items : [...items.slice(0, 5), ...items.slice(5).filter((x) => x.fill)];
+            return html`<tr class="it-grp"><td colspan="6"><b>${k} · ${it.chapters[k]}</b> <span class="faint small">(${items.length} položiek, ${money(items.reduce((a, x) => a + x.total, 0))} €)</span></td></tr>
+              ${show.map((x) => html`<tr class=${x.fill ? "it-fill" : ""}><td>${x.name}${x.delivery ? html` <span class="badge">dodávka GD</span>` : null}</td><td>${x.unit}</td><td class="num">${fmtNum(x.qty, 2)}</td><td class="num">${money(x.unitCost)}</td><td class="num">${money(x.total)}</td><td class="faint small">${x.element}</td></tr>`)}
+              ${show.length < items.length ? html`<tr><td colspan="6"><button class="btn plain sm" onClick=${() => setOpen({ ...open, [k]: true })}>Zobraziť všetkých ${items.length} položiek</button></td></tr>` : null}`;
+          })}</tbody>
+        </table></div>
+      </div>
+    </div>`;
+  }
+
   function StepResult({ ctx, draft, upd }) {
     const { result: r, house, baseParams, studyParams, variants, outdoor, check, sanity } = useMemo(() => computeFor(ctx, draft), [draft.study, draft.baseOverrides, draft.baseHouseId, draft.baseMode, draft.finish, draft.variantSel, ctx.prices, ctx.settings]);
     const toggleSel = (id) => { const cur = draft.variantSel || []; upd({ variantSel: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] }); };
@@ -785,6 +858,9 @@
     const [saving, setSaving] = useState(false);
     const [exporting, setExporting] = useState(false);
     const [contract, setContract] = useState(false);
+    const [tab, setTab] = useState("odhad");
+    const [unlocked, setUnlocked] = useState(itemizedUnlocked.ok);
+    const [askPw, setAskPw] = useState(false);
     const [summary, setSummary] = useState(draft.aiSummary || "");
     const [sumBusy, setSumBusy] = useState(false);
     const maxAbs = Math.max(1, ...r.topDrivers.map((d) => Math.abs(d.deltaInclVat)));
@@ -852,7 +928,16 @@
       setSumBusy(false);
     }
 
+    const openItemized = () => { if (unlocked) setTab("polozky"); else setAskPw(true); };
+    const tabs = caps.itemized ? html`<div class="row" style="gap:6px;margin-bottom:12px" id="result-tabs">
+      <button class=${"btn sm" + (tab === "odhad" ? " primary" : "")} onClick=${() => setTab("odhad")}>Odborný odhad</button>
+      <button class=${"btn sm" + (tab === "polozky" ? " primary" : "")} onClick=${openItemized}><${Icon} name=${unlocked ? "check" : "lock"} />Položkový rozpočet${unlocked ? "" : " · zamknuté"}</button>
+    </div>
+    ${askPw ? html`<${ItemizedUnlock} ctx=${ctx} onClose=${() => setAskPw(false)} onOk=${() => { itemizedUnlocked.ok = true; setUnlocked(true); setAskPw(false); setTab("polozky"); }} />` : null}` : null;
+    if (caps.itemized && unlocked && tab === "polozky") return html`${tabs}<${ItemizedView} ctx=${ctx} draft=${draft} r=${r} house=${house} />`;
+
     return html`
+      ${tabs}
       <div class="kpis">
         <div class="card kpi kpi-house"><div class="grow"><div class="kpi-label">Východiskový dom</div><div class="kpi-value num">${fmtEur(r.basePriceInclVat)}</div><div class="kpi-sub">${house.name} · ${draft.finish === "holodom" ? "holodom" : "štandard"} · s DPH${check && check.useMedian ? " · medián z podobných domov" : ""}</div></div><div class="house-mini lg"><${HouseImg} h=${house} plan=${false} /></div></div>
         <div class="card kpi hero"><div class="kpi-label">Odborný cenový odhad</div><div class="kpi-value num">${fmtEur(r.estimateInclVat)}</div><div class="kpi-sub">rozpätie ${fmtEur(r.range.lowInclVat)} – ${fmtEur(r.range.highInclVat)} (±${fmtNum(r.range.bandPct, 1)} %)</div></div>
@@ -1284,7 +1369,7 @@
     const me = window.ESServer.me;
     const tok = (n) => (n >= 1e6 ? fmtNum(n / 1e6, 1) + " mil." : fmtNum(n / 1e3, 0) + " tis.");
     return html`
-      <div class="notice info"><div><b>Obchodník</b> robí a ukladá prepočty a vidí katalóg. <b>Administrátor</b> navyše spravuje používateľov, údaje firmy, číselník a nastavenia výpočtu. Nový používateľ si pri prvom prihlásení zmení heslo.</div></div>
+      <div class="notice info"><div><b>Obchodník</b> robí a ukladá prepočty a vidí katalóg. <b>Administrátor</b> navyše spravuje používateľov, údaje firmy, číselník a nastavenia výpočtu. <b>Položkový rozpočet</b> vidí administrátor a len tí používatelia, ktorým ho tu povolíte – pred otvorením ešte zadajú svoje heslo. Nový používateľ si pri prvom prihlásení zmení heslo.</div></div>
       ${shown ? html`<div class="notice"><div><b>Prihlasovacie údaje pre ${shown.email}</b><div style="margin-top:4px">Dočasné heslo: <code style="font-size:15px;user-select:all">${shown.password}</code></div><div class="small" style="margin-top:4px">Pošlite ich používateľovi. Heslo sa už nebude dať zobraziť znova; pri prvom prihlásení si ho zmení.</div></div><button class="btn plain sm" onClick=${() => setShown(null)}>Zavrieť</button></div>` : null}
       <div class="section-title">Pridať používateľa</div>
       <div class="card card-pad"><div class="mini-grid" style="padding:0">
@@ -1295,11 +1380,12 @@
       </div><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn primary" onClick=${add}><${Icon} name="plus" />Pridať používateľa</button></div></div>
       <div class="section-title">Používatelia</div>
       <div class="card">${list === null ? html`<div class="empty"><div class="spinner"></div></div>` : html`<div class="table-wrap"><table class="t">
-        <thead><tr><th>Meno</th><th>E-mail</th><th>Rola</th><th>Stav</th><th class="num">AI tento mesiac</th><th>Od</th><th></th></tr></thead>
+        <thead><tr><th>Meno</th><th>E-mail</th><th>Rola</th><th>Položkový rozpočet</th><th>Stav</th><th class="num">AI tento mesiac</th><th>Od</th><th></th></tr></thead>
         <tbody>${list.map((u) => html`<tr>
           <td><b>${u.name || "–"}</b>${u.id === me.id ? html` <span class="badge accent">vy</span>` : null}</td>
           <td>${u.email}</td>
           <td><select class="input" style="min-width:140px" value=${u.role} disabled=${u.id === me.id} onChange=${(e) => patch(u, { role: e.target.value }, "Rola je zmenená")}><option value="sales">Obchodník</option><option value="admin">Administrátor</option></select></td>
+          <td>${u.role === "admin" ? html`<span class="faint small">áno (administrátor)</span>` : html`<label class="check" title="Povoliť prístup k položkovému rozpočtu"><input type="checkbox" data-itemized=${u.email} checked=${!!u.itemized} onChange=${(e) => patch(u, { itemized: e.target.checked }, e.target.checked ? "Položkový rozpočet je povolený" : "Položkový rozpočet je zakázaný")} />povolený</label>`}</td>
           <td>${u.active ? html`<span class="badge ok">aktívny</span>` : html`<span class="badge bad">vypnutý</span>`}${u.mustChange ? html` <span class="badge warn">čaká na zmenu hesla</span>` : null}</td>
           <td class="num">${u.aiThisMonth.calls ? html`${u.aiThisMonth.calls} volaní<div class="faint small">${tok(u.aiThisMonth.inputTokens)} / ${tok(u.aiThisMonth.outputTokens)} tokenov</div>` : "–"}</td>
           <td>${fmtDate(u.createdAt)}</td>

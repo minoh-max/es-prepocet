@@ -1097,6 +1097,96 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
       info: { title: `Odborný cenový odhad – ${est.clientName || house.name}`, author: rep.name || company.name },
     };
   }
+  // ---------- Položkový rozpočet v štruktúre ES (nadstavba – prístup povoľuje administrátor) ----------
+  // Rekapitulácia overená na rozpočtoch 106/26 a 226/21 (bez DPH ±0,01 €, s DPH presne):
+  // MO = HUS + ZR + presun 2 % zo ZR; HSV/PSV = A/B + presun 2 % bez dodávok GD; GZS 3,5 % z (MO + HSV + PSV − dodávky);
+  // zisk 4 % z (základ GZS + GZS + C2); bez DPH = MO + HSV + PSV + GZS + C2 + zisk + C1; zľava −(C1 − 650); DPH 23 %.
+  const ES_CHAPTERS = {
+    HUS: "Hrubá uzatvorená stavba", ZR: "Položky programu Šikovné ručičky",
+    A1: "Zemné práce a zakladanie stavieb", A2: "Konštrukcie zvislé a vodorovné", A4: "Úpravy povrchov, podlahy", A5: "Spevnené plochy, dlažby, komunikácie",
+    B1: "Izolácie proti vode, izolácie tepelné", B2: "Vnútorné zdravotno-technické inštalácie", B3: "Zriaďovacie predmety", B4: "Konštrukcie tesárske, klampiarske, krytiny",
+    B5: "Konštrukcie stolárske", B6: "Podlahy z dlaždíc a obklady keramické", B7: "Podlahy vlysové, parketové a povlakové", B8: "Dokončovacie práce a povrchové úpravy",
+    C1: "Projektovanie a inžinierska činnosť", C2: "Lešenie a použitie ťažkej mechanizácie",
+  };
+  /** Kapitola rozpočtu ES pre prvok výpočtu (podľa súpisu 106/26). */
+  const ELEMENT_CHAPTER = {
+    zemne: "HUS", zaklady: "HUS", zaklady_dt: "HUS", hydroizolacia: "HUS", murivo_obvodove: "HUS", murivo_vnutorne: "HUS", stropy: "HUS", vence: "HUS", preklady: "HUS",
+    krov: "HUS", krytina: "HUS", okna: "HUS", dvere_vchodove: "HUS", stresne_okna: "HUS", garaz: "HUS", komin_krb: "HUS",
+    pricky: "ZR", klampiarske: "ZR", zateplenie_fasady: "ZR", zateplenie_strechy: "ZR", izolacia_podlah: "ZR", omietky: "ZR", podlahy: "ZR",
+    elektro: "B2", zti: "B2", vykurovanie_rozvod: "B2", zdroj_tepla: "B2", rekuperacia: "B2", kupelne: "B3", dvere_vnutorne: "B5", obklady: "B6", lesenie: "C2",
+  };
+  const DELIVERY_ELEMENTS = ["zdroj_tepla", "rekuperacia"]; // dodávky GD – bez presunu hmôt a GZS
+  const ES_K = { presun: 0.02, gzs: 0.035, zisk: 0.04, vat: 0.23, keep: 650, hus: 1.6 / (1.035 * 1.04) };
+  const rc = (x) => Math.round((x + 1e-9) * 100) / 100;
+  /** Rekapitulácia rozpočtu ES z položiek { ch, qty, unit, cost (bez DPH, pri HUS nákladová cena), delivery }. */
+  function recapES(items) {
+    const ch = {}; for (const k of Object.keys(ES_CHAPTERS)) ch[k] = 0;
+    for (const it of items) ch[it.ch] = (ch[it.ch] || 0) + it.total;
+    for (const k of Object.keys(ch)) ch[k] = rc(k === "HUS" ? ch[k] * ES_K.hus : ch[k]);
+    const sumOf = (pre) => Object.keys(ch).filter((k) => k.startsWith(pre)).reduce((a, k) => a + ch[k], 0);
+    const dod = (pre) => items.filter((it) => it.delivery && it.ch.startsWith(pre)).reduce((a, it) => a + it.total, 0);
+    const A = sumOf("A"), B = sumOf("B"), dA = dod("A"), dB = dod("B");
+    const presunZR = rc(ch.ZR * ES_K.presun), presunA = rc((A - dA) * ES_K.presun), presunB = rc((B - dB) * ES_K.presun);
+    const MO = rc(ch.HUS + ch.ZR + presunZR), HSV = rc(A + presunA), PSV = rc(B + presunB);
+    const baseGzs = rc(MO + HSV + PSV - dA - dB), gzs = rc(baseGzs * ES_K.gzs);
+    const baseZisk = rc(baseGzs + gzs + ch.C2), zisk = rc(baseZisk * ES_K.zisk);
+    const exclVat = rc(MO + HSV + PSV + gzs + ch.C2 + zisk + ch.C1);
+    const discount = -Math.max(0, rc(ch.C1 - ES_K.keep));
+    return { chapters: ch, presunZR, presunA, presunB, MO, HSV, PSV, baseGzs, gzs, baseZisk, zisk, exclVat, vat: rc(exclVat * ES_K.vat), discount, discountVat: rc(discount * ES_K.vat), total: Math.round((exclVat + discount) * (1 + ES_K.vat)) };
+  }
+  /**
+   * Položkový rozpočet z výsledku odhadu: položky prvkov štúdie (množstvo × cena číselníka) roztriedené do kapitol ES,
+   * projekt C1 a dorovnanie na odborný odhad (položky štandardu ES, ktoré model zatiaľ nerozpisuje).
+   */
+  function buildItemized(result, opts = {}) {
+    const items = [];
+    for (const e of result.elements) {
+      if (e.key === "rezia_velkost") continue;
+      const ch = ELEMENT_CHAPTER[e.key] || "B8", delivery = DELIVERY_ELEMENTS.includes(e.key);
+      if (e.pricedBy === "firma" || !e.study.lines.length) {
+        // ceny firmy sú s DPH a prirážkami – prepočet späť na položku rozpočtu
+        if (!e.study.cost) continue;
+        const net = e.pricedBy === "firma" ? e.study.cost / (1 + ES_K.vat) / (delivery ? 1 : ch === "HUS" ? 1.6 : 1.02 * 1.035 * 1.04) : e.study.cost;
+        items.push({ ch, element: e.label, name: e.label + (e.study.materialLabel ? " – " + e.study.materialLabel : ""), unit: "sb", qty: 1, unitCost: rc(net), total: rc(net), delivery, source: e.pricedBy === "firma" ? "cena firmy" : "sadzba" });
+        continue;
+      }
+      for (const l of e.study.lines) {
+        if (!(l.quantity > 0)) continue;
+        items.push({ ch, element: e.label, code: l.pathCode, name: l.name, unit: l.unit, qty: rc(l.quantity), unitCost: rc(l.unitCost), total: rc(l.quantity * l.unitCost), delivery, source: l.pathCode ? "číselník" : "sadzba" });
+      }
+    }
+    const target = Math.round(result.estimateInclVat);
+    const c1 = opts.c1 != null && opts.c1 !== "" ? Math.round(+opts.c1) : contractNumbers(target).c1;
+    items.push({ ch: "C1", element: "Projekt", name: "Projektová príprava a inžinierska činnosť", unit: "sb", qty: 1, unitCost: c1, total: c1, source: "C1" });
+    // dorovnanie: položka v ZR (presun, GZS a zisk ako ostatné) tak, aby súčet s DPH = odborný odhad
+    const base = recapES(items);
+    const factor = (1 + ES_K.presun) * (1 + ES_K.gzs) * (1 + ES_K.zisk);
+    let fill = rc((target / (1 + ES_K.vat) - (base.exclVat + base.discount)) / factor);
+    const withFill = (f) => recapES([...items, { ch: "ZR", total: f, delivery: false }]);
+    for (let i = 0; i < 20 && withFill(fill).total !== target; i++) fill = rc(fill + (withFill(fill).total < target ? 0.5 : -0.5));
+    const fillItem = { ch: "ZR", element: "Dorovnanie", name: fill >= 0 ? "Ostatné položky štandardu ES (z katalógovej ceny, nerozpísané)" : "Korekcia na odborný odhad", unit: "sb", qty: 1, unitCost: fill, total: fill, source: "dorovnanie", fill: true };
+    const all = Math.abs(fill) >= 0.01 ? [...items, fillItem] : items;
+    const recap = recapES(all);
+    const modeled = recapES(items);
+    return { items: all, recap, fill, modeledTotal: modeled.total, target, c1, chapters: ES_CHAPTERS };
+  }
+  /** Export položkového rozpočtu do Excelu (Krycí list, Rekapitulácia, Položky). */
+  function itemizedWorkbook(it, meta = {}) {
+    const X = window.XLSX; const wb = X.utils.book_new(); const r = it.recap;
+    const cover = [["Položkový rozpočet – " + (meta.name || "Rodinný dom")], [], ["Identifikácia zákazky", meta.zakazka || ""], ["Investor", meta.investor || ""], ["Umiestnenie", meta.place || ""], ["Spracované dňa", fmtDate(Date.now())], [],
+      ["Celkové náklady bez DPH", r.exclVat], ["DPH 23 %", r.vat], ["Zľava (projekt C1 − 650 €)", r.discount], ["DPH zľavy", r.discountVat], ["Celkové náklady na stavbu vrátane DPH", r.total], [],
+      ["Položky z výpočtu (bez dorovnania), s DPH", it.modeledTotal], ["Dorovnanie na odborný odhad (bez DPH, v ZR)", it.fill]];
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(cover), "Krycí list");
+    const rek = [["Kód", "Kapitola", "Suma bez DPH"], ...Object.keys(ES_CHAPTERS).filter((k) => r.chapters[k]).map((k) => [k, ES_CHAPTERS[k], r.chapters[k]]),
+      ["", "Presun hmôt ZR 2 %", r.presunZR], ["", "Minimálny odber – celkom", r.MO], ["", "Presun hmôt HSV 2 %", r.presunA], ["", "Presun hmôt PSV 2 % (bez dodávok)", r.presunB],
+      ["", "GZS 3,5 % z " + r.baseGzs.toFixed(2), r.gzs], ["", "Zisk a réžia 4 % z " + r.baseZisk.toFixed(2), r.zisk], ["", "Celkové náklady bez DPH", r.exclVat]];
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(rek), "Rekapitulácia");
+    const pol = [["Kapitola", "Kód položky", "Popis", "M.j.", "Množstvo", "J.cena", "Celkom", "Prvok", "Dodávka GD", "Zdroj"],
+      ...it.items.map((x) => [x.ch, x.code || "", x.name, x.unit, x.qty, x.unitCost, x.total, x.element, x.delivery ? "áno" : "", x.source])];
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(pol), "Položky");
+    return new Blob([X.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  }
+
   // ---------- Zmluvný súpis prác a dodávok – 1. strana (investor) ----------
   // Rozloženie podľa súpisu ES (JasperReports). Projekt C1 je v cene bez DPH a klientovi sa kompenzuje zľavou
   // C1 − 650 €, preto konečná suma s DPH = cena domu z odhadu bez ohľadu na výšku C1.
@@ -1211,6 +1301,6 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     buildPrices, parsePriceListXlsx, diffPriceLists, mergeSettings, extrasFrom,
     ROLES, ROLE, roleItems, mapMaterial, processFile, readStudyWithAI, aiToStudy, mergePages, explainWithAI,
     layoutText, isTextPage, pagePrompt, textPrompt, OPENING_LABEL, OPENING_TYPES, FIXTURE_LABEL, FOUNDATION_LABEL, bathroomText, dtPieces, studySummary, groupNotes, initOutdoor, houseExtras,
-    blobToDataUrl, buildPdfDoc, pdfBlob, buildContractDoc, contractNumbers, priceLevel,
+    blobToDataUrl, buildPdfDoc, pdfBlob, buildContractDoc, contractNumbers, priceLevel, recapES, buildItemized, itemizedWorkbook, ES_CHAPTERS,
   };
 })();

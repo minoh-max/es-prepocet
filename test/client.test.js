@@ -98,3 +98,27 @@ test("typový projekt N14 – 1: skutočná geometria (valbová 40°, okná z v�
   const other = houses.find((x) => x.name === "Stela 27");
   assert.equal(L.effectiveBase(other, settings).typeProject, null);
 });
+
+test("položkový rozpočet: rekapitulácia ES z kapitol 106/26 a 226/21 dá presne sumu rozpočtu", () => {
+  const lump = (o) => [
+    { ch: "HUS", total: o.HUS / (1.6 / (1.035 * 1.04)) }, { ch: "ZR", total: o.ZR }, { ch: "A4", total: o.A },
+    { ch: "B2", total: o.B - o.dod }, { ch: "B2", total: o.dod, delivery: true }, { ch: "C1", total: o.C1 }, { ch: "C2", total: o.C2 },
+  ];
+  const r106 = L.recapES(lump({ HUS: 76139.68, ZR: 43419.26, A: 0, B: 29545.22, dod: 12949.40, C1: 23076, C2: 1952.21 }));
+  assert.equal(r106.total, 201079); assert.ok(Math.abs(r106.exclVat - 185904.69) < 0.03);
+  const r226 = L.recapES(lump({ HUS: 77694.46, ZR: 17109.39, A: 10260.28, B: 48708.55, dod: 13504.42, C1: 18260, C2: 1959.90 }));
+  assert.equal(r226.total, 207285);
+});
+
+test("položkový rozpočet z odhadu: súčet s DPH = odborný odhad, dorovnanie v ZR, TČ ako dodávka", () => {
+  const cis = JSON.parse(fs.readFileSync(path.join(R, "client/data/ciselnik.json"), "utf8"));
+  const settings = L.mergeSettings(undefined), prices = L.buildPrices(cis, {}), extras = L.extrasFrom(JSON.parse(fs.readFileSync(path.join(R, "client/data/houses.json"), "utf8")).config);
+  const h = houses.find((x) => x.name === "Kristína 40 C"); const eb = L.effectiveBase(h, settings);
+  const study = { ...JSON.parse(JSON.stringify(eb.params)), heatingSource: "tc", usableAreaM2: 104, builtAreaM2: 129.4 };
+  const r = ctx.ESEngine.computeEstimate({ basePriceInclVat: h.price, finish: "standard", base: eb.params, study, prices, settings, extras });
+  const it = L.buildItemized(r);
+  assert.equal(it.recap.total, Math.round(r.estimateInclVat));
+  assert.ok(it.items.some((x) => x.fill && x.ch === "ZR"));
+  assert.ok(it.items.some((x) => x.delivery && x.ch === "B2"));
+  assert.ok(it.items.filter((x) => x.ch === "HUS").length > 10);
+});

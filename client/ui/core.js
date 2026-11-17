@@ -22,6 +22,7 @@
     download: "M12 4v12M7 11l5 5 5-5M4 20h16",
     ext: "M14 4h6v6M20 4l-9 9M18 14v6H4V6h6",
     check: "M5 12.5 10 17l9-10",
+    lock: "M6 11V8a6 6 0 0 1 12 0v3M5 11h14v10H5z",
     x: "M6 6l12 12M18 6 6 18",
     back: "M15 5l-7 7 7 7",
     trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
@@ -115,7 +116,9 @@
         const [db, user, sample, assets, downloads] = await Promise.all(["db", "user", "sample", "assets", "downloads"].map(useCap));
         let me = null, id = null, admin = false;
         if (user) { try { [me, id, admin] = await Promise.all([user.me(), user.id(), user.canEdit()]); } catch (e) { /* signed out */ } }
-        caps.current = { db, user, sample, assets, downloads, me, uid: id, admin };
+        // položkový rozpočet: administrátor alebo používateľ, ktorému ho administrátor povolil
+        const itemized = !!admin || !!(window.ESServer && window.ESServer.me && window.ESServer.me.itemized);
+        caps.current = { db, user, sample, assets, downloads, me, uid: id, admin, itemized };
         setBoot((b) => ({ ...b, capsReady: true }));
         if (db) {
           db.doc("config/app").onSnapshot((s) => setConfig(s.exists ? s.data() : {}), () => {});
