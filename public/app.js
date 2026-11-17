@@ -35,7 +35,28 @@
   const DIST_LABEL = { podlahove: "Podlahové kúrenie", radiatory: "Radiátory" };
   const houseUrl = (h) => `https://www.ekonomicke-stavby.sk/domy/${h.slug}`;
 
+  /**
+   * Skutočné parametre katalógových domov podľa typových projektov ES (geometria, nie materiály – materiály a skladby
+   * ostávajú podľa aktuálneho štandardu ES, lebo katalógová cena zodpovedá dnešnému štandardu, nie roku projektu).
+   * Bez týchto údajov sa dom modeluje len z plôch a údajov katalógu.
+   */
+  const TYPE_PROJECTS = {
+    // N14 – 1: typový projekt 000/17 (Veľký Lapáš, 11/2017). Katalóg uvádza sedlovú strechu, projekt má polovalbovú a valbovú 40°.
+    // Rozmery 11,46 × 9,01 m (pôdorys 1.NP), nadmurovka 0,9 m (rez A-A: podlaha +2,860, veniec +3,760), okná podľa výkazu A11.
+    "N14 - 1": {
+      source: "typový projekt 000/17", roofType: "valbova", roofPitchDeg: 40, widthM: 9.01, lengthM: 11.46, kneeWallM: 0.9,
+      openings: [
+        { type: "okno", widthM: 0.9, heightM: 1.25, count: 10, label: "O1" }, { type: "okno", widthM: 0.9, heightM: 0.75, count: 4, label: "O2" },
+        { type: "balkonove", widthM: 1.5, heightM: 2.3, count: 1, label: "O3" }, { type: "balkonove", widthM: 0.9, heightM: 2.075, count: 2, label: "O4" },
+        { type: "vchodove", widthM: 0.8, heightM: 2.05, count: 1, label: "D1" }, { type: "garazova", widthM: 2.4, heightM: 2.15, count: 1, label: "D2" },
+        { type: "vnutorne", widthM: 0.8, heightM: 1.97, count: 6, label: "VD1" }, { type: "vnutorne", widthM: 0.6, heightM: 1.97, count: 3, label: "VD2" },
+      ],
+    },
+  };
+  const typeProject = (h) => (h && TYPE_PROJECTS[h.name]) || null;
+
   function houseParams(h) {
+    const tp = typeProject(h);
     return {
       usableAreaM2: h.pu, builtAreaM2: h.pz,
       widthM: h.w || undefined, lengthM: h.l || undefined,
@@ -45,12 +66,20 @@
       wcs: (h.bath || 1) >= 2 ? 0 : 1, garages: h.gar || 0,
       heatingSource: "plyn", heatingDistribution: "podlahove",
       centralRecuperation: false, chimney: false, fireplace: false,
+      ...(tp ? clean({ roofType: tp.roofType, widthM: tp.widthM, lengthM: tp.lengthM, roofPitchDeg: tp.roofPitchDeg, kneeWallM: tp.kneeWallM, openings: tp.openings && clone(tp.openings) }) : {}),
     };
   }
 
   /** Base = catalog house in the fixed ES standard (nothing is taken from the study, nothing is editable by the rep). */
   function effectiveBase(house, settings) {
-    return { params: E.standardHouse(houseParams(house), settings), inherited: {} };
+    const params = E.standardHouse(houseParams(house), settings);
+    const tp = typeProject(house);
+    if (tp) {
+      if (tp.roofPitchDeg) params.roofPitchDeg = tp.roofPitchDeg;
+      if (tp.kneeWallM && params.floorsType === "podkrovie") params.kneeWallM = tp.kneeWallM;
+      if (tp.openings) params.openings = clone(tp.openings);
+    }
+    return { params, inherited: {}, typeProject: tp ? tp.source : null };
   }
   const round1 = (n) => Math.round(n * 10) / 10;
   function clean(o) {
@@ -1175,7 +1204,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
 
   window.ESL = {
     fmtNum, fmtEur, fmtSigned, fmtPct, fmtDate, parseNum, norm, uid, clone, clean,
-    KIND, ROOF, FLOORS_LABEL, ROOF_LABEL, HEAT_LABEL, DIST_LABEL, houseUrl, houseParams, effectiveBase, findClosestHouses,
+    KIND, ROOF, TYPE_PROJECTS, FLOORS_LABEL, ROOF_LABEL, HEAT_LABEL, DIST_LABEL, houseUrl, houseParams, effectiveBase, findClosestHouses,
     buildPrices, parsePriceListXlsx, diffPriceLists, mergeSettings, extrasFrom,
     ROLES, ROLE, roleItems, mapMaterial, processFile, readStudyWithAI, aiToStudy, mergePages, explainWithAI,
     layoutText, isTextPage, pagePrompt, textPrompt, OPENING_LABEL, OPENING_TYPES, FIXTURE_LABEL, FOUNDATION_LABEL, bathroomText, dtPieces, studySummary, groupNotes, initOutdoor, houseExtras,

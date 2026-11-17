@@ -84,3 +84,17 @@ test("súpis pre investora: čísla 1. strany ako v rozpočte 106/26 (zľava = C
   assert.ok(Math.abs(d.c1 - 23076) < 20);
   assert.equal(L.priceLevel("ciselnik1 (23.03.2026)"), "260323");
 });
+
+test("typový projekt N14 – 1: skutočná geometria (valbová 40°, okná z výkazu); štúdia = projekt dá katalógovú cenu", () => {
+  const h = houses.find((x) => x.name === "N14 - 1");
+  const cis = JSON.parse(fs.readFileSync(path.join(R, "client/data/ciselnik.json"), "utf8"));
+  const settings = L.mergeSettings(undefined), prices = L.buildPrices(cis, {}), extras = L.extrasFrom(JSON.parse(fs.readFileSync(path.join(R, "client/data/houses.json"), "utf8")).config);
+  const eb = L.effectiveBase(h, settings);
+  assert.equal(eb.typeProject, "typový projekt 000/17");
+  assert.equal(eb.params.roofType, "valbova");
+  assert.equal(eb.params.kneeWallM, 0.9);
+  const r = ctx.ESEngine.computeEstimate({ basePriceInclVat: h.price, finish: "standard", base: eb.params, study: JSON.parse(JSON.stringify(eb.params)), prices, settings, extras });
+  assert.equal(r.estimateInclVat, h.price);
+  const other = houses.find((x) => x.name === "Stela 27");
+  assert.equal(L.effectiveBase(other, settings).typeProject, null);
+});
