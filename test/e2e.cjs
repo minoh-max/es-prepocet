@@ -58,8 +58,20 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.click("text=Vypočítať odhad"); await page.waitForTimeout(1200);
     await page.screenshot({ path: SHOTS + "/04_result.png" });
     const est = await page.textContent(".kpi.hero .kpi-value"); console.log("odhad:", est);
-    const cc = await page.textContent("#cross-check").catch(() => null); console.log("kontrola:", (cc || "").replace(/\s+/g, " ").slice(0, 140)); if (!cc || !/Kontrola z \d+ podobných domov/.test(cc)) errors.push("chýba kontrola z podobných domov");
-    const sc = await page.textContent("#sanity-check").catch(() => null); console.log("kontrola rozpočtu:", (sc || "").replace(/\s+/g, " ").slice(0, 200)); if (!sc || !/Kontrola rozpočtu/.test(sc) || !/Tri čísla, ktoré overte/.test(sc)) errors.push("chýba kontrola rozpočtu");
+    const cc = await page.textContent("#cross-check").catch(() => null); console.log("kontrola:", (cc || "").replace(/\s+/g, " ").slice(0, 140)); if (!cc || !/Kontrola z \d+ podobných domov/.test(cc)) fail("chýba kontrola z podobných domov");
+    const medBtn = await page.$("#cross-check button:has-text('Použiť medián')");
+    if (medBtn) {
+      const medTxt = (await medBtn.textContent()).replace(/[^\d]/g, "");
+      await medBtn.click(); await page.waitForTimeout(800);
+      const est2 = (await page.textContent(".kpi.hero .kpi-value")).replace(/[^\d]/g, "");
+      console.log("medián:", medTxt, "→ odhad", est2);
+      if (est2 !== medTxt) fail("po „Použiť medián“ sa odhad nezmenil na medián");
+      if (!/medián z podobných domov/.test(await page.textContent(".kpi-house"))) fail("chýba označenie mediánu pri východiskovom dome");
+      await page.click("#cross-check button:has-text('Počítať len z domu')"); await page.waitForTimeout(800);
+      const est3 = (await page.textContent(".kpi.hero .kpi-value")).replace(/[^\d]/g, "");
+      if (est3 !== (est || "").replace(/[^\d]/g, "")) fail("návrat na zvolený dom nevrátil pôvodný odhad");
+    } else fail("chýba tlačidlo „Použiť medián“ pri odchýlke nad 3 %");
+    const sc = await page.textContent("#sanity-check").catch(() => null); console.log("kontrola rozpočtu:", (sc || "").replace(/\s+/g, " ").slice(0, 200)); if (!sc || !/Kontrola rozpočtu/.test(sc) || !/Tri čísla, ktoré overte/.test(sc)) fail("chýba kontrola rozpočtu");
     await page.click("#sanity-check button:has-text('Zobraziť')").catch(() => {}); await page.waitForTimeout(200); await page.locator("#sanity-check").screenshot({ path: SHOTS + "/04b_sanity.png" }).catch(() => {});
     await page.fill("#client-name", "Test klient").catch(() => {});
     await page.click("text=Uložiť prepočet"); await page.waitForTimeout(1000);

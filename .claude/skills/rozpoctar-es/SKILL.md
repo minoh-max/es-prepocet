@@ -17,7 +17,8 @@ Ak je v prostredí aplikácia ES Prepočet, číselník alebo rozpočty, použi 
 
 1. Ak štúdia/správa menuje typový dom („typové riešenie ES, dom Blanka 3B“), použi ho. Názvy porovnávaj bez ohľadu na medzery („Blanka 3B“ = „Blanka 3 B“), ale „Blanka 3“ nie je „Blanka 3B“.
 2. Inak hľadaj v katalógu dom rovnakého typu (bungalov / podkrovie / poschodový), rovnakej strechy a garáže, najbližšej zastavanej plochy, rozmerov a úžitkovej plochy. Zhoda zastavanej plochy na 0,01 m² takmer vždy znamená ten istý dom (aj keď katalóg má preklep v rozmere).
-3. **Kontrola z 5 najpodobnejších domov:** prepočítaj štúdiu aj z ďalších podobných domov a uveď medián a rozpätie. Ceny katalógových domov rovnakej veľkosti sa líšia až o 10 %; ak sa zvolený dom líši od mediánu o viac ako 3 % a klient z neho nevychádza, použi medián.
+3. **Hlavný odhad = medián z 5 najpodobnejších domov**, ak klient nevychádza z konkrétneho katalógového domu. Ceny katalógových domov rovnakej veľkosti sa líšia až o 10 %; medián je presnejší (rozpočty ES 2023–2026: priemerná odchýlka 1,4 % oproti 2,6 % z jedného domu). Ak štúdia menuje dom, počítaj z neho a medián uveď ako kontrolu.
+5. **Typové projekty:** ak má dom v aplikácii uložený typový projekt (napr. N14 – 1 podľa projektu 000/17), geometria východiskového domu (strecha, rozmery, nadmurovka, okná) je podľa projektu, nie podľa katalógu – katalóg má pri niektorých domoch zlú strechu či rozmery.
 4. Typ strechy ber zo správy alebo z pohľadov, nie z rezu (rez valbovej strechy vyzerá ako sedlová).
 
 ## 2. Štandard ES (s čím sa porovnáva)
@@ -76,6 +77,10 @@ Interné výrobné náklady a číselníkové ceny patria administrátorovi, nie
 ## Čomu sa vyhnúť
 
 - Neobjavuj nadštandard tam, kde je štandard (biele okná, dvojkrídle okno, 1 rad DT, sadrokartónový strop).
-- Farbu okien počítaj len ak ju štúdia/správa výslovne uvádza.
+- Farbu okien počítaj len ak je farba výslovne pomenovaná (antracit, RAL 7016, zlatý dub). „Farba podľa požiadaviek investora“ = biele okná (tak počíta rozpočet ES – zákazka 106/26).
+- HS portál len pri výslovnom označení (HS, posuvné, zdvižno-posuvné). Široké dvere na terasu bez označenia (aj 3,0 m) = balkónové dvere dvojkrídle.
+- Komín hľadaj aktívne: komínová hlavica nad strechou v reze a pohľadoch, teleso a „prívod vzduchu ku krbu“ v pôdoryse (106/26 ho mal na reze, AI ho prehliadla).
+- Výlez na strechu (Luminex) nie je strešné okno.
+- Rozhodnutia klienta po štúdii (sprchový kút, OSB obklady, farba okien, schody) zo štúdie nevyčítaš – opýtaj sa na ne, inak ich uveď v „Na overenie u klienta“.
 - Nepočítaj prípojky, ktoré už na pozemku existujú.
 - Keď výsledok vychádza mimo ±3 % voči známemu rozpočtu, hľadaj príčinu v konkrétnej kapitole (HUS, A, B), nie celkovým koeficientom.

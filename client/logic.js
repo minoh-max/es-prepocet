@@ -420,6 +420,7 @@
   }
 
   // ---------- AI reading of the study: page by page, then deterministic merge ----------
+  const WINDOW_COLOR_RE = /antrac|\bral\b|ral\s*\d|dekor|dub|orech|siv|šed|sed[aá]|čiern|cierna|tmav|hned|grafit|bronz|krém|krem|zlat|mahag|winchest|farebn/i;
   const OPENING_TYPES = ["okno", "balkonove", "hs", "vchodove", "vedlajsie", "vnutorne", "garazova", "stresne"];
 
   const JSON_SHAPE = `{"razitko":{"stavba":null,"stupen":null,"vykres":null,"cisloVykresu":null,"mierka":null,"datum":null,"jednotkyKot":"mm","zakazka":null,"manazerProjektu":null,"projektant":null,"katastralneUzemie":null,"parcela":null},
@@ -466,7 +467,8 @@ Pravidlá:
    - Prejdi systematicky každú obvodovú stenu dookola, potom vnútorné steny. Každý otvor zapíš raz; rovnaké otvory spoj s počtom.
    - Značenie ES: na kótovacej reťazi je šírka otvoru (napr. 1500) a pri nej výška s parapetom „1450(850)“ = výška 1,45 m, parapet 0,85 m. „2300“ bez parapetu = dvere/okno po zem. „FIX“ alebo „PZ“ = pevné zasklenie (okno). Dvere v pôdoryse majú pri sebe „900/1970“ = šírka/výška.
    - Ak rozmery otvorov nie sú zakótované, odhadni šírku podľa mierky z najbližších kót a nastav "odhad": true.
-   - typ: "okno" (aj pevné zasklenie a francúzske okno s parapetom); "balkonove" (dvere na terasu/balkón do šírky 2,4 m, aj „okno po zem“); "hs" (posuvné presklené steny širšie ako 2,4 m); "vchodove" (hlavný vstup); "vedlajsie" (ďalšie vonkajšie dvere – zo spálne/technickej miestnosti/garáže do exteriéru); "vnutorne" (dvere medzi miestnosťami – rátaj oblúky otvárania a posuvné dvere, nie otvory bez dverí); "garazova"; "stresne".
+   - typ: "okno" (aj pevné zasklenie a francúzske okno s parapetom); "balkonove" (dvere na terasu/balkón do šírky 2,4 m, aj „okno po zem“); "hs" LEN ak je otvor výslovne označený ako HS / posuvný / zdvižno-posuvný (text vo výpise či pohľade, šípka posunu v pôdoryse) – široké dvere na terasu bez takého označenia (aj 3,0 m) sú "balkonove", tak ich počíta rozpočet ES; "vchodove" (hlavný vstup); "vedlajsie" (ďalšie vonkajšie dvere – zo spálne/technickej miestnosti/garáže do exteriéru); "vnutorne" (dvere medzi miestnosťami – rátaj oblúky otvárania a posuvné dvere, nie otvory bez dverí); "garazova"; "stresne" (strešné okno; výlez na strechu – Luminex, výlezné okno – NIE je strešné okno, nezapisuj ho).
+   - Počet okien porovnaj s pohľadmi a výpisom otvorov, ak sú k dispozícii; nezhodu zapíš do "kontroly".
 4. MIESTNOSTI: z tabuľky/legendy miestností (číslo, názov, plocha). "pocetIzieb" = počet obytných izieb (obývacia izba, spálňa, detská izba, izba, pracovňa, hosťovská); kuchyňa spojená s obývačkou sa nepočíta zvlášť.
 5. KÚPEĽNE A WC: pre každú kúpeľňu a samostatné WC zapíš vybavenie podľa symbolov v pôdoryse alebo podľa popisu v texte (vaňa, polrohová/rohová vaňa = rohovaVana, voľne stojaca vaňa, sprchový kút, sprcha so žľabom/walk-in, počet umývadiel, WC kombi alebo závesné, bidet). Kúpeľňa len s WC a umývadlom = samostatneWC true.
 6. REZ A ZALOŽENIE:
@@ -477,7 +479,7 @@ Pravidlá:
    - "patkaVyskaM" a "patkaSirkaM" = betónová pätka pod DT (napr. 750 mm na reze).
 7. MATERIÁLY: presne podľa textu (výrobok + hrúbka). Zateplenie strechy/stropu: ak skladba uvádza viac vrstiev izolácie (napr. 180 + 120 + 80 mm), zapíš ich a do "zateplenieStrechyHrubkaMm" daj súčet. Ak fasáda nemá kontaktné zateplenie (len omietka na murive), napíš „bez zateplenia“.
 8. TYP DOMU a STRECHA uveď len kódom: typDomu "bungalov" | "podkrovie" | "poschodovy"; strecha.typ "sedlova" | "valbova" | "pultova" | "plocha" | "kombinovana". "pocetPodlazi" = počet nadzemných podlaží (obytné podkrovie sa ráta).
-TECHNIKA: zdrojTepla "plyn" | "tc" | "elektro" (aj elektrické podlahové kúrenie) | "tuhe"; rozvodTepla "podlahove" | "radiatory"; rekuperacia "centralna" | "decentralna" | "ziadna"; krb true aj pre krbové kachle; komin true ak je navrhnutý komín; oknaFarba "biela" | "prefarbene" – "prefarbene" len ak text alebo legenda výslovne uvádza farbu rámov okien inú ako biela (antracit, RAL 7016, dekor dreva, zlatý dub, „okná farebné“), inak null.
+TECHNIKA: zdrojTepla "plyn" | "tc" | "elektro" (aj elektrické podlahové kúrenie) | "tuhe"; rozvodTepla "podlahove" | "radiatory"; rekuperacia "centralna" | "decentralna" | "ziadna"; krb true aj pre krbové kachle; komin true ak je navrhnutý komín – hľadaj komínové teleso v pôdoryse (aj „prívod vzduchu ku krbu“, symbol krbu) a komínovú hlavicu nad strechou v reze a pohľadoch (kóta vrchu komína); oknaFarba "biela" alebo konkrétna farba presne podľa podkladov (napr. "antracit RAL 7016", "zlatý dub") – len ak je farba rámov výslovne pomenovaná. Formulácia „farba podľa požiadaviek/výberu investora“, „upresní investor“ bez konkrétnej farby = null (rozpočet ES vtedy počíta biele okná).
 9. NADŠTANDARDY: len to, čo projekt skutočne navrhuje (nie alternatívy typu „alt. zo zámkovej dlažby“ pri okapovom chodníku, nie sokel, nie farba alebo imitácia dreva na oknách). Obklad fasády (drevo, kameň, pásiky) len ak je fasáda naozaj obložená. Podlahy a žalúzie len ak sú výslovne iné ako laminát/bez žalúzií. Krb a komín len ak sú zakreslené v pôdoryse alebo popísané v správe – všeobecné poznámky na výkrese („teleso krbu bude zhotovené…“) nie sú návrh. Ak množstvo v m alebo m² nie je uvedené, daj "mnozstvo": null. Kľúče a jednotky: ${extras}. Pri m² a m uveď množstvo, ak sa dá zistiť (napr. terasa 19,02 m²).
 10. PRÍPOJKY A POZEMOK (hlavne zo situácie a zo sprievodnej správy): dĺžky prípojok na pozemku v metroch od domu po miesto napojenia alebo merania (vodomerná šachta, pilierik elektromera, hranica pozemku) – "vodaM", "kanalizaciaM" (k žumpe, ČOV alebo k verejnej sieti), "dazdovaM", "plynM", "elektroM". Dĺžku zapíš, ak je okótovaná alebo popísaná; ak je trasa len zakreslená, odmeraj ju podľa mierky situácie a uveď to v poznámke. "odkanalizovanie" = "zumpa" | "cov" | "verejna". "vodomernaSachta" true/false, "revizneSachty" = počet revíznych šachiet, "cerpaciaSachta" true ak sa splašky prečerpávajú (čerpacia / prečerpávacia šachta). "terasaM2", "spevnenePlochyM2" (chodníky, parkovanie zo zámkovej dlažby), "okapovyChodnikM2". Žumpu, ČOV a prípojky už NEZAPISUJ do nadštandardov.
 11. Nič nevymýšľaj – čo nie je uvedené, daj null alebo prázdne pole. istota: "high" = priamo napísané, "medium" = odčítané z kót, "low" = odhad.`;
@@ -735,7 +737,8 @@ ${JSON_SHAPE}`;
         heatingSource: tk.zdrojTepla, heatingDistribution: tk.rozvodTepla,
         centralRecuperation: tk.rekuperacia ? tk.rekuperacia === "centralna" : undefined,
         chimney: bool(tk.komin), fireplace: bool(tk.krb),
-        windowsColored: typeof tk.oknaFarba === "string" ? /prefarb|antrac|ral|dekor|dub|farebn|siv|čiern|tmav/i.test(tk.oknaFarba) && !/^biel/i.test(tk.oknaFarba) : undefined,
+        // prefarbené len pri pomenovanej farbe; „podľa požiadaviek investora“ bez farby = biele (rozpočet 106/26)
+        windowsColored: typeof tk.oknaFarba === "string" ? WINDOW_COLOR_RE.test(tk.oknaFarba) && !/^biel/i.test(tk.oknaFarba) && !/investor|upresn|podľa výberu|podla vyberu/i.test(tk.oknaFarba) : undefined,
         openings: merged.length ? merged : undefined,
         bathroomsDetail: baths.length ? baths.map(({ isWc, ...b }) => b) : undefined,
         foundation, floors: floorList.length ? floorList.map(({ key, ...f }) => f) : undefined,

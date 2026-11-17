@@ -420,6 +420,7 @@
   }
 
   // ---------- AI reading of the study: page by page, then deterministic merge ----------
+  const WINDOW_COLOR_RE = /antrac|\bral\b|ral\s*\d|dekor|dub|orech|siv|šed|sed[aá]|čiern|cierna|tmav|hned|grafit|bronz|krém|krem|zlat|mahag|winchest|farebn/i;
   const OPENING_TYPES = ["okno", "balkonove", "hs", "vchodove", "vedlajsie", "vnutorne", "garazova", "stresne"];
 
   const JSON_SHAPE = `{"razitko":{"stavba":null,"stupen":null,"vykres":null,"cisloVykresu":null,"mierka":null,"datum":null,"jednotkyKot":"mm","zakazka":null,"manazerProjektu":null,"projektant":null,"katastralneUzemie":null,"parcela":null},
@@ -466,7 +467,8 @@ Pravidlá:
    - Prejdi systematicky každú obvodovú stenu dookola, potom vnútorné steny. Každý otvor zapíš raz; rovnaké otvory spoj s počtom.
    - Značenie ES: na kótovacej reťazi je šírka otvoru (napr. 1500) a pri nej výška s parapetom „1450(850)“ = výška 1,45 m, parapet 0,85 m. „2300“ bez parapetu = dvere/okno po zem. „FIX“ alebo „PZ“ = pevné zasklenie (okno). Dvere v pôdoryse majú pri sebe „900/1970“ = šírka/výška.
    - Ak rozmery otvorov nie sú zakótované, odhadni šírku podľa mierky z najbližších kót a nastav "odhad": true.
-   - typ: "okno" (aj pevné zasklenie a francúzske okno s parapetom); "balkonove" (dvere na terasu/balkón do šírky 2,4 m, aj „okno po zem“); "hs" (posuvné presklené steny širšie ako 2,4 m); "vchodove" (hlavný vstup); "vedlajsie" (ďalšie vonkajšie dvere – zo spálne/technickej miestnosti/garáže do exteriéru); "vnutorne" (dvere medzi miestnosťami – rátaj oblúky otvárania a posuvné dvere, nie otvory bez dverí); "garazova"; "stresne".
+   - typ: "okno" (aj pevné zasklenie a francúzske okno s parapetom); "balkonove" (dvere na terasu/balkón do šírky 2,4 m, aj „okno po zem“); "hs" LEN ak je otvor výslovne označený ako HS / posuvný / zdvižno-posuvný (text vo výpise či pohľade, šípka posunu v pôdoryse) – široké dvere na terasu bez takého označenia (aj 3,0 m) sú "balkonove", tak ich počíta rozpočet ES; "vchodove" (hlavný vstup); "vedlajsie" (ďalšie vonkajšie dvere – zo spálne/technickej miestnosti/garáže do exteriéru); "vnutorne" (dvere medzi miestnosťami – rátaj oblúky otvárania a posuvné dvere, nie otvory bez dverí); "garazova"; "stresne" (strešné okno; výlez na strechu – Luminex, výlezné okno – NIE je strešné okno, nezapisuj ho).
+   - Počet okien porovnaj s pohľadmi a výpisom otvorov, ak sú k dispozícii; nezhodu zapíš do "kontroly".
 4. MIESTNOSTI: z tabuľky/legendy miestností (číslo, názov, plocha). "pocetIzieb" = počet obytných izieb (obývacia izba, spálňa, detská izba, izba, pracovňa, hosťovská); kuchyňa spojená s obývačkou sa nepočíta zvlášť.
 5. KÚPEĽNE A WC: pre každú kúpeľňu a samostatné WC zapíš vybavenie podľa symbolov v pôdoryse alebo podľa popisu v texte (vaňa, polrohová/rohová vaňa = rohovaVana, voľne stojaca vaňa, sprchový kút, sprcha so žľabom/walk-in, počet umývadiel, WC kombi alebo závesné, bidet). Kúpeľňa len s WC a umývadlom = samostatneWC true.
 6. REZ A ZALOŽENIE:
@@ -477,7 +479,7 @@ Pravidlá:
    - "patkaVyskaM" a "patkaSirkaM" = betónová pätka pod DT (napr. 750 mm na reze).
 7. MATERIÁLY: presne podľa textu (výrobok + hrúbka). Zateplenie strechy/stropu: ak skladba uvádza viac vrstiev izolácie (napr. 180 + 120 + 80 mm), zapíš ich a do "zateplenieStrechyHrubkaMm" daj súčet. Ak fasáda nemá kontaktné zateplenie (len omietka na murive), napíš „bez zateplenia“.
 8. TYP DOMU a STRECHA uveď len kódom: typDomu "bungalov" | "podkrovie" | "poschodovy"; strecha.typ "sedlova" | "valbova" | "pultova" | "plocha" | "kombinovana". "pocetPodlazi" = počet nadzemných podlaží (obytné podkrovie sa ráta).
-TECHNIKA: zdrojTepla "plyn" | "tc" | "elektro" (aj elektrické podlahové kúrenie) | "tuhe"; rozvodTepla "podlahove" | "radiatory"; rekuperacia "centralna" | "decentralna" | "ziadna"; krb true aj pre krbové kachle; komin true ak je navrhnutý komín; oknaFarba "biela" | "prefarbene" – "prefarbene" len ak text alebo legenda výslovne uvádza farbu rámov okien inú ako biela (antracit, RAL 7016, dekor dreva, zlatý dub, „okná farebné“), inak null.
+TECHNIKA: zdrojTepla "plyn" | "tc" | "elektro" (aj elektrické podlahové kúrenie) | "tuhe"; rozvodTepla "podlahove" | "radiatory"; rekuperacia "centralna" | "decentralna" | "ziadna"; krb true aj pre krbové kachle; komin true ak je navrhnutý komín – hľadaj komínové teleso v pôdoryse (aj „prívod vzduchu ku krbu“, symbol krbu) a komínovú hlavicu nad strechou v reze a pohľadoch (kóta vrchu komína); oknaFarba "biela" alebo konkrétna farba presne podľa podkladov (napr. "antracit RAL 7016", "zlatý dub") – len ak je farba rámov výslovne pomenovaná. Formulácia „farba podľa požiadaviek/výberu investora“, „upresní investor“ bez konkrétnej farby = null (rozpočet ES vtedy počíta biele okná).
 9. NADŠTANDARDY: len to, čo projekt skutočne navrhuje (nie alternatívy typu „alt. zo zámkovej dlažby“ pri okapovom chodníku, nie sokel, nie farba alebo imitácia dreva na oknách). Obklad fasády (drevo, kameň, pásiky) len ak je fasáda naozaj obložená. Podlahy a žalúzie len ak sú výslovne iné ako laminát/bez žalúzií. Krb a komín len ak sú zakreslené v pôdoryse alebo popísané v správe – všeobecné poznámky na výkrese („teleso krbu bude zhotovené…“) nie sú návrh. Ak množstvo v m alebo m² nie je uvedené, daj "mnozstvo": null. Kľúče a jednotky: ${extras}. Pri m² a m uveď množstvo, ak sa dá zistiť (napr. terasa 19,02 m²).
 10. PRÍPOJKY A POZEMOK (hlavne zo situácie a zo sprievodnej správy): dĺžky prípojok na pozemku v metroch od domu po miesto napojenia alebo merania (vodomerná šachta, pilierik elektromera, hranica pozemku) – "vodaM", "kanalizaciaM" (k žumpe, ČOV alebo k verejnej sieti), "dazdovaM", "plynM", "elektroM". Dĺžku zapíš, ak je okótovaná alebo popísaná; ak je trasa len zakreslená, odmeraj ju podľa mierky situácie a uveď to v poznámke. "odkanalizovanie" = "zumpa" | "cov" | "verejna". "vodomernaSachta" true/false, "revizneSachty" = počet revíznych šachiet, "cerpaciaSachta" true ak sa splašky prečerpávajú (čerpacia / prečerpávacia šachta). "terasaM2", "spevnenePlochyM2" (chodníky, parkovanie zo zámkovej dlažby), "okapovyChodnikM2". Žumpu, ČOV a prípojky už NEZAPISUJ do nadštandardov.
 11. Nič nevymýšľaj – čo nie je uvedené, daj null alebo prázdne pole. istota: "high" = priamo napísané, "medium" = odčítané z kót, "low" = odhad.`;
@@ -735,7 +737,8 @@ ${JSON_SHAPE}`;
         heatingSource: tk.zdrojTepla, heatingDistribution: tk.rozvodTepla,
         centralRecuperation: tk.rekuperacia ? tk.rekuperacia === "centralna" : undefined,
         chimney: bool(tk.komin), fireplace: bool(tk.krb),
-        windowsColored: typeof tk.oknaFarba === "string" ? /prefarb|antrac|ral|dekor|dub|farebn|siv|čiern|tmav/i.test(tk.oknaFarba) && !/^biel/i.test(tk.oknaFarba) : undefined,
+        // prefarbené len pri pomenovanej farbe; „podľa požiadaviek investora“ bez farby = biele (rozpočet 106/26)
+        windowsColored: typeof tk.oknaFarba === "string" ? WINDOW_COLOR_RE.test(tk.oknaFarba) && !/^biel/i.test(tk.oknaFarba) && !/investor|upresn|podľa výberu|podla vyberu/i.test(tk.oknaFarba) : undefined,
         openings: merged.length ? merged : undefined,
         bathroomsDetail: baths.length ? baths.map(({ isWc, ...b }) => b) : undefined,
         foundation, floors: floorList.length ? floorList.map(({ key, ...f }) => f) : undefined,
@@ -1470,7 +1473,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         filled.outdoor = L.initOutdoor(filled, ctx.settings, r.merged.pripojky, r.merged.pripojkySrc);
         filled.extras = L.houseExtras(filled, ctx.settings);
         const proj = { ...(r.merged.project || {}), ...Object.fromEntries(Object.entries(draft.project || {}).filter(([, v]) => v)) };
-        upd({ project: proj, ai: { pages: r.merged.pages, notes: r.merged.notes, notesList: r.merged.notesList, unreadable: r.merged.unreadable, checks: r.merged.checks, drawings: r.merged.drawings, houseName: r.merged.houseName, raw: r.raw }, study: filled, matches: matches.map((m) => ({ id: m.house.id, score: m.score, reasons: m.reasons })), baseHouseId: base, baseConfirmed: false, step: 2, aiMeta: { pagesRead: r.raw.length, pagesTotal: pages.length, errors: r.errors } });
+        upd({ project: proj, ai: { pages: r.merged.pages, notes: r.merged.notes, notesList: r.merged.notesList, unreadable: r.merged.unreadable, checks: r.merged.checks, drawings: r.merged.drawings, houseName: r.merged.houseName, raw: r.raw }, study: filled, matches: matches.map((m) => ({ id: m.house.id, score: m.score, reasons: m.reasons })), baseHouseId: base, baseConfirmed: false, baseMode: draft.baseHouseId || (matches[0] && matches[0].score >= 97) ? "dom" : "median", step: 2, aiMeta: { pagesRead: r.raw.length, pagesTotal: pages.length, errors: r.errors } });
         ctx.say(r.errors.length ? `Rozpoznané, ${r.errors.length} strán sa nepodarilo prečítať` : "Podklady sú rozpoznané – skontrolujte údaje");
       } catch (e) {
         const code = e && e.code;
@@ -1734,9 +1737,9 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
           <div class="grow"><h3 style="font-size:20px">${house.name}</h3>
             <div class="muted">${house.disp} · ${fmtNum(house.pu, 1)} m² úžitková · ${fmtNum(house.pz, 1)} m² zastavaná · ${L.FLOORS_LABEL[L.KIND[house.kind]]} · ${L.ROOF_LABEL[L.ROOF[house.roof]].toLowerCase()} strecha</div>
             <div class="row" style="margin-top:8px"><span class="badge accent">${fmtEur(draft.finish === "holodom" ? house.hol : house.price)} ${draft.finish === "holodom" ? "holodom" : "štandard"} s DPH</span><a href=${L.houseUrl(house)} target="_blank" rel="noopener" class="small">Otvoriť na webe ↗</a></div>
-            ${draft.baseConfirmed === false ? html`<div class="notice" style="margin-top:12px"><div><b>Potvrďte východiskový dom.</b> Aplikácia ho navrhla podľa rozmerov a plôch zo štúdie. Presnosť odhadu závisí najmä od správneho domu – ak klient vychádza z iného katalógového domu, vyberte ho vpravo alebo cez „Zmeniť dom“.<div style="margin-top:8px"><button class="btn primary sm" onClick=${() => upd({ baseConfirmed: true })}>Potvrdiť dom</button></div></div></div>` : null}
+            ${draft.baseConfirmed === false ? html`<div class="notice" style="margin-top:12px"><div><b>Potvrďte východiskový dom.</b> Aplikácia ho navrhla podľa rozmerov a plôch zo štúdie.${draft.baseMode === "median" ? " Keďže štúdia neuvádza konkrétny katalógový dom, odhad sa vypočíta ako medián z 5 najpodobnejších domov (presnejšie ako z jedného domu)." : ""} Presnosť odhadu závisí najmä od správneho domu – ak klient vychádza z iného katalógového domu, vyberte ho vpravo alebo cez „Zmeniť dom“.<div style="margin-top:8px"><button class="btn primary sm" onClick=${() => upd({ baseConfirmed: true })}>Potvrdiť dom</button></div></div></div>` : null}
           </div>
-          ${matches.length ? html`<div style="min-width:220px"><div class="small muted" style="margin-bottom:6px">Najbližšie katalógové domy</div>${matches.slice(0, 4).map((m) => { const h = ctx.housesById[m.id]; return html`<button class="btn sm" style="width:100%;justify-content:space-between;margin-bottom:4px;background:${m.id === house.id ? "var(--accent-soft)" : ""}" onClick=${() => upd({ baseHouseId: m.id, baseConfirmed: true })} title=${(m.reasons || []).join(", ")}><span>${h.name}</span><span class="faint">${m.score} %</span></button>`; })}</div>` : null}
+          ${matches.length ? html`<div style="min-width:220px"><div class="small muted" style="margin-bottom:6px">Najbližšie katalógové domy</div>${matches.slice(0, 4).map((m) => { const h = ctx.housesById[m.id]; return html`<button class="btn sm" style="width:100%;justify-content:space-between;margin-bottom:4px;background:${m.id === house.id ? "var(--accent-soft)" : ""}" onClick=${() => upd({ baseHouseId: m.id, baseConfirmed: true, baseMode: "dom" })} title=${(m.reasons || []).join(", ")}><span>${h.name}</span><span class="faint">${m.score} %</span></button>`; })}</div>` : null}
         </div>` : html`<div class="card-pad"><button class="btn primary" onClick=${() => setPick(true)}>Vybrať východiskový dom</button></div>`}
       </div>
 
@@ -1755,7 +1758,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         const hp = L.houseParams(h), st = { ...(draft.study || {}) };
         let filled = false;
         for (const k of Object.keys(hp)) if (st[k] == null || st[k] === "") { st[k] = hp[k]; filled = true; }
-        upd({ baseHouseId: h.id, baseOverrides: {}, baseConfirmed: true, ...(filled ? { study: fillDefaults(st, h) } : {}) }); setPick(false); }} /><//>` : null}`;
+        upd({ baseHouseId: h.id, baseOverrides: {}, baseConfirmed: true, baseMode: "dom", ...(filled ? { study: fillDefaults(st, h) } : {}) }); setPick(false); }} /><//>` : null}`;
   }
 
   const OUT_GROUPS = { pripojky: "Prípojky na pozemku", objekty: "Šachty, žumpa a meranie", plochy: "Spevnené plochy", ine: "Ďalšie položky na pozemku" };
@@ -2062,18 +2065,34 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
 
   // ---------- Step 3: result ----------
   function computeFor(ctx, draft) {
-    const house = ctx.housesById[draft.baseHouseId];
-    const eb = L.effectiveBase(house, ctx.settings);
+    const house0 = ctx.housesById[draft.baseHouseId];
+    const eb0 = L.effectiveBase(house0, ctx.settings);
     const study = L.clean({ ...draft.study });
     delete study.materialTexts; delete study.evidence;
     // bez zastavanej plochy sa nedá počítať geometria: odvoď ju z východiskového domu v pomere úžitkových plôch
-    if (!study.builtAreaM2 && study.usableAreaM2 && eb.params.builtAreaM2 && eb.params.usableAreaM2) study.builtAreaM2 = Math.round(eb.params.builtAreaM2 * study.usableAreaM2 / eb.params.usableAreaM2 * 10) / 10;
+    if (!study.builtAreaM2 && study.usableAreaM2 && eb0.params.builtAreaM2 && eb0.params.usableAreaM2) study.builtAreaM2 = Math.round(eb0.params.builtAreaM2 * study.usableAreaM2 / eb0.params.usableAreaM2 * 10) / 10;
     study.materials = L.clean(draft.study.materials || {});
     const outdoorParams = draft.study.outdoor || L.initOutdoor(draft.study, ctx.settings);
     delete study.outdoor;
     study.extras = L.houseExtras(study, ctx.settings);
     if (!study.extras.length) delete study.extras;
     const outdoor = E.computeOutdoor(outdoorParams, ctx.prices, ctx.settings, ctx.extras.accessories || {});
+    // Kontrola a hlavný odhad: ten istý prepočet z 5 najpodobnejších katalógových domov. Ceny katalógových domov rovnakej
+    // veľkosti sa líšia aj o 10 %, preto je medián spoľahlivejší ako jeden dom (katalóg: do 3 % pri 40 % domov oproti 34 %;
+    // rozpočty ES 2023–2026: priemerná odchýlka 1,8 % oproti 3,0 %). Ak klient vychádza z konkrétneho domu, počíta sa z neho.
+    const priceOf = (h) => (draft.finish === "holodom" ? h.hol : h.price);
+    const peers = L.findClosestHouses(study, ctx.houses, "", 5).map((m) => m.house);
+    if (!peers.some((h) => h.id === house0.id)) peers.unshift(house0);
+    const cross = peers.map((h) => {
+      if (!priceOf(h)) return null;
+      const v = E.computeEstimate({ basePriceInclVat: priceOf(h), finish: draft.finish, base: L.effectiveBase(h, ctx.settings).params, study, prices: ctx.prices, settings: ctx.settings, extras: ctx.extras });
+      return { id: h.id, name: h.name, estimate: v.estimateInclVat, house: h };
+    }).filter(Boolean);
+    const byEst = [...cross].sort((a, b) => a.estimate - b.estimate);
+    const medianItem = byEst.length ? byEst[Math.floor(byEst.length / 2)] : null;
+    const useMedian = draft.baseMode === "median" && byEst.length >= 3 && medianItem;
+    const house = useMedian ? medianItem.house : house0;
+    const eb = useMedian ? L.effectiveBase(house, ctx.settings) : eb0;
     const r = E.computeEstimate({
       basePriceInclVat: draft.finish === "holodom" ? house.hol : house.price,
       finish: draft.finish, base: eb.params, study, prices: ctx.prices, settings: ctx.settings, extras: ctx.extras,
@@ -2097,20 +2116,11 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     mk("usporny", "Úsporný variant", eco.length ? eco.map((o) => o.title).join("; ") : "", eco.map((o) => o.patch));
     const sel = opts.filter((o) => (draft.variantSel || []).includes(o.id));
     mk("vlastny", "Vlastný variant", sel.map((o) => o.title).join("; "), sel.map((o) => o.patch));
-    // Kontrola: ten istý prepočet z 5 najpodobnejších katalógových domov. Ceny katalógových domov rovnakej veľkosti sa líšia
-    // aj o 10 %, preto medián z viacerých domov je spoľahlivejší (test na katalógu: do 3 % pri 40 % domov oproti 34 % z jedného domu).
-    const peers = L.findClosestHouses(study, ctx.houses, "", 5).map((m) => m.house);
-    if (!peers.some((h) => h.id === house.id)) peers.unshift(house);
-    const cross = peers.map((h) => {
-      const pb = L.effectiveBase(h, ctx.settings);
-      const price = draft.finish === "holodom" ? h.hol : h.price;
-      if (!price) return null;
-      const v = E.computeEstimate({ basePriceInclVat: price, finish: draft.finish, base: pb.params, study, prices: ctx.prices, settings: ctx.settings, extras: ctx.extras });
-      return { id: h.id, name: h.name, estimate: v.estimateInclVat };
-    }).filter(Boolean);
-    const sorted = cross.map((x) => x.estimate).sort((a, b) => a - b);
+    const sorted = byEst.map((x) => x.estimate);
     const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : r.estimateInclVat;
-    const check = { peers: cross, median, low: sorted[0], high: sorted[sorted.length - 1], devPct: (r.estimateInclVat / median - 1) * 100 };
+    const est0 = (cross.find((x) => x.id === house0.id) || { estimate: r.estimateInclVat }).estimate;
+    const check = { peers: cross.map(({ house: _h, ...x }) => x), median, low: sorted[0], high: sorted[sorted.length - 1], devPct: (est0 / median - 1) * 100,
+      useMedian: !!useMedian, selected: { id: house0.id, name: house0.name, estimate: est0 }, medianHouse: medianItem ? medianItem.name : null };
     // Kontrola rozpočtu pred odoslaním: vnútorná konzistencia množstiev, cien a rozsahu (bez AI, nič nehodnotí trhovo)
     const sanity = E.sanityCheck({ result: r, base: eb.params, study, outdoor: outdoorParams, settings: ctx.settings });
     return { result: r, house, baseParams: eb.params, studyParams: study, variants, outdoor, outdoorParams, check, sanity };
@@ -2186,7 +2196,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
   }
 
   function StepResult({ ctx, draft, upd }) {
-    const { result: r, house, baseParams, studyParams, variants, outdoor, check, sanity } = useMemo(() => computeFor(ctx, draft), [draft.study, draft.baseOverrides, draft.baseHouseId, draft.finish, draft.variantSel, ctx.prices, ctx.settings]);
+    const { result: r, house, baseParams, studyParams, variants, outdoor, check, sanity } = useMemo(() => computeFor(ctx, draft), [draft.study, draft.baseOverrides, draft.baseHouseId, draft.baseMode, draft.finish, draft.variantSel, ctx.prices, ctx.settings]);
     const toggleSel = (id) => { const cur = draft.variantSel || []; upd({ variantSel: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] }); };
     const [detail, setDetail] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -2213,7 +2223,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
           id: draft.id, ownerId: caps.uid, ownerName: ctx.profile?.name || caps.me?.name || "", clientName: draft.clientName || "", clientNote: draft.clientNote || "", project: L.clean(draft.project || {}),
           finish: draft.finish, baseHouseId: draft.baseHouseId, baseHouseName: house.name, files, aiSummary: summary || "",
           ai: draft.ai ? { pages: draft.ai.pages || [], notes: draft.ai.notes || "", notesList: draft.ai.notesList || [], unreadable: draft.ai.unreadable || [], checks: draft.ai.checks || [], drawings: draft.ai.drawings || [], houseName: draft.ai.houseName || "" } : null, variantSel: draft.variantSel || [],
-          study: L.clone(draft.study), baseOverrides: L.clone(draft.baseOverrides || {}), matches: draft.matches || [], contract: draft.contract || null,
+          study: L.clone(draft.study), baseOverrides: L.clone(draft.baseOverrides || {}), matches: draft.matches || [], contract: draft.contract || null, baseMode: draft.baseMode || "dom",
           summary: {
             basePrice: r.basePriceInclVat, estimate: r.estimateInclVat, estimateExclVat: r.estimateExclVat, change: r.changeInclVat, changePct: r.changePct, range: r.range,
             topDrivers: r.topDrivers.map((d) => ({ key: d.key, label: d.label, delta: Math.round(d.deltaInclVat), explanation: d.explanation })),
@@ -2221,7 +2231,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
             variants: variants.map(({ id, name, estimate, changePct }) => ({ id, name, estimate: Math.round(estimate), changePct })),
             outdoor: { inclVat: Math.round(outdoor.inclVat), exclVat: Math.round(outdoor.exclVat), missing: outdoor.missing },
             sanity: sanity ? { counts: sanity.counts, findings: sanity.findings.map((f) => ({ id: f.id, severity: f.severity, line: f.line, what: f.what })) } : null,
-            check: check ? { median: Math.round(check.median), low: Math.round(check.low), high: Math.round(check.high), devPct: Math.round(check.devPct * 10) / 10, peers: check.peers.map((p) => ({ name: p.name, estimate: Math.round(p.estimate) })) } : null,
+            check: check ? { median: Math.round(check.median), low: Math.round(check.low), high: Math.round(check.high), devPct: Math.round(check.devPct * 10) / 10, useMedian: !!check.useMedian, peers: check.peers.map((p) => ({ name: p.name, estimate: Math.round(p.estimate) })) } : null,
           },
           priceListVersion: ctx.priceList.version || "", status: "hotový", createdAt: draft.createdAt || Date.now(), updatedAt: Date.now(),
         };
@@ -2261,16 +2271,20 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
 
     return html`
       <div class="kpis">
-        <div class="card kpi kpi-house"><div class="grow"><div class="kpi-label">Východiskový dom</div><div class="kpi-value num">${fmtEur(r.basePriceInclVat)}</div><div class="kpi-sub">${house.name} · ${draft.finish === "holodom" ? "holodom" : "štandard"} · s DPH</div></div><div class="house-mini lg"><${HouseImg} h=${house} plan=${false} /></div></div>
+        <div class="card kpi kpi-house"><div class="grow"><div class="kpi-label">Východiskový dom</div><div class="kpi-value num">${fmtEur(r.basePriceInclVat)}</div><div class="kpi-sub">${house.name} · ${draft.finish === "holodom" ? "holodom" : "štandard"} · s DPH${check && check.useMedian ? " · medián z podobných domov" : ""}</div></div><div class="house-mini lg"><${HouseImg} h=${house} plan=${false} /></div></div>
         <div class="card kpi hero"><div class="kpi-label">Odborný cenový odhad</div><div class="kpi-value num">${fmtEur(r.estimateInclVat)}</div><div class="kpi-sub">rozpätie ${fmtEur(r.range.lowInclVat)} – ${fmtEur(r.range.highInclVat)} (±${fmtNum(r.range.bandPct, 1)} %)</div></div>
         <div class="card kpi"><div class="kpi-label">Zmena oproti východiskovému</div><div class="kpi-value num ${r.changeInclVat > 0 ? "delta-up" : "delta-down"}">${fmtSigned(r.changeInclVat)}</div><div class="kpi-sub"><${Pill} pct=${r.changePct} /> <span style="margin-left:6px">bez DPH ${fmtEur(r.estimateExclVat)}</span></div></div>
       </div>
       ${r.warnings.length ? html`<div class="notice"><div><b>Na overenie</b><ul>${r.warnings.slice(0, 6).map((w) => html`<li>${w}</li>`)}</ul></div></div>` : null}
-      ${check && check.peers.length > 1 ? html`<div class=${"notice " + (Math.abs(check.devPct) > 3 ? "alert" : "info")} id="cross-check"><div>
+      ${check && check.peers.length > 1 ? html`<div class=${"notice " + (!check.useMedian && Math.abs(check.devPct) > 3 ? "alert" : "info")} id="cross-check"><div>
         <b>Kontrola z ${check.peers.length} podobných domov: medián ${fmtEur(check.median)}</b> (${fmtEur(check.low)} – ${fmtEur(check.high)}).
-        ${Math.abs(check.devPct) > 3
-          ? html` Odhad z domu ${house.name} sa od mediánu líši o ${fmtNum(check.devPct, 1)} %. Ak klient nevychádza práve z tohto domu, použite medián alebo vyberte bližší dom.`
-          : html` Odhad z domu ${house.name} sedí s ostatnými domami (${fmtNum(check.devPct, 1)} %).`}
+        ${check.useMedian
+          ? html` Odhad je <b>medián</b> – počíta sa z domu ${house.name}. Klient nevychádza z konkrétneho katalógového domu a medián z viacerých domov je presnejší ako jeden dom (rozpočty ES: priemerná odchýlka 1,8 % oproti 3,0 %).
+              <div style="margin-top:6px"><button class="btn sm" onClick=${() => upd({ baseMode: "dom" })}>Počítať len z domu ${check.selected.name} (${fmtEur(check.selected.estimate)})</button></div>`
+          : Math.abs(check.devPct) > 3
+            ? html` Odhad z domu ${check.selected.name} sa od mediánu líši o ${fmtNum(check.devPct, 1)} %. Ak klient nevychádza práve z tohto domu, použite medián.
+                <div style="margin-top:6px"><button class="btn sm primary" onClick=${() => upd({ baseMode: "median" })}>Použiť medián ${fmtEur(check.median)}</button></div>`
+            : html` Odhad z domu ${check.selected.name} sedí s ostatnými domami (${fmtNum(check.devPct, 1)} %).`}
         <div class="small muted" style="margin-top:4px">${check.peers.map((p) => `${p.name} ${fmtEur(p.estimate)}`).join(" · ")}</div>
       </div></div>` : null}
       <${SanityCard} sanity=${sanity} admin=${caps.admin} />
