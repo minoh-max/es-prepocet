@@ -1065,6 +1065,88 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
       info: { title: `Odborný cenový odhad – ${est.clientName || house.name}`, author: rep.name || company.name },
     };
   }
+  // ---------- Zmluvný súpis prác a dodávok – 1. strana (investor) ----------
+  // Rozloženie podľa súpisu ES (JasperReports). Projekt C1 je v cene bez DPH a klientovi sa kompenzuje zľavou
+  // C1 − 650 €, preto konečná suma s DPH = cena domu z odhadu bez ohľadu na výšku C1.
+  // C1 ≈ 14,17 % z ostatných nákladov bez DPH (zákazka 106/26, sadzobník UNIKA 2026) – dá sa prepísať pri exporte.
+  const CONTRACT_C1_PCT = 14.17, CONTRACT_C1_KEEP = 650;
+  const ES_LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="30 74 440 194"><path fill="#000000" d="M204.3,147.8v-12c0-9-11.3-13.5-34-13.5h-51c-23.8,0-35.7,4.4-35.7,13.2v12.3h120.8ZM197.2,207.9c27.6.3,50.1,20.3,50.1,48l-37.2-4c-2.1-4.9-6.8-8.3-12.3-8.5h0s-65.3-.6-65.3-.6c-34.4-.3-58-4.9-70.6-14.7-13.2-10.1-19.8-22.3-19.8-36.5v-54c0-18.5,9.7-32.2,29-41.1,14.5-6.7,32.2-10.1,53.1-10.1h51.1c17.6,0,32.7,3.2,45.5,9.7,16.3,8.1,24.4,19.9,24.4,35.6v53.3H84.9c0,14.4,20.3,20.9,60.8,21.6,16,.3,32.5.3,51.5,1.2Z"/>\n<path fill="#000000" d="M305.3,206.6h0c-27.6-.3-49.6,21.7-49.6,49.3l36.8-4.1c2.1-5,7-9,12.8-9h84.2c45.7,0,68.6-15.5,68.6-46.6v-6.7c0-29.5-21.5-44.1-64.4-44.3l-58.3-.3c-10.8,0-17.6-.2-20.4-.5-10.2-1-15.3-3.7-15.3-8.1v-6.6c0-4.6,11.1-7,33.4-6.9l48.9.3,6.6-36.4-56.9-.3c-21.2-.1-37.2,2.1-47.9,6.1-17,6.4-25.6,18.5-25.6,36.1v8c0,30,25.7,44.8,77,45l57.2.3c15.3,0,22.9,2.9,22.9,8.7v5.5c0,6.8-8.6,10.3-25.7,10.3h-84.3Z"/></svg>';
+  /** Cenová úroveň v tvare RRMMDD z verzie číselníka („ciselnik1 (16.11.2026)“ → 261116). */
+  function priceLevel(version, ts = Date.now()) {
+    const m = String(version || "").match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+    const d = m ? new Date(+m[3], +m[2] - 1, +m[1]) : new Date(ts);
+    return String(d.getFullYear() % 100).padStart(2, "0") + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+  }
+  /** Čísla 1. strany súpisu z ceny domu s DPH (po zľave). */
+  function contractNumbers(totalInclVat, opts = {}) {
+    const vat = opts.vatRate ?? 0.23, r2 = (x) => Math.round(x * 100) / 100;
+    const total = Math.round(totalInclVat);
+    const net = total / (1 + vat); // náklady bez DPH po zľave
+    const c1 = opts.c1 != null && opts.c1 !== "" ? Math.round(+opts.c1) : Math.round(((opts.c1Pct ?? CONTRACT_C1_PCT) / 100) * (net - CONTRACT_C1_KEEP));
+    const discount = -Math.max(0, c1 - CONTRACT_C1_KEEP);
+    const exclVat = r2(net - discount);
+    return { exclVat, vat0: 0, vat: r2(exclVat * vat), adj: 0, discount, discountVat: r2(discount * vat), total, c1, vatPct: Math.round(vat * 100) };
+  }
+  function buildContractDoc({ est, total, company, logoDataUrl, priceListVersion, opts = {} }) {
+    const now = Date.now(), pr = est.project || {};
+    const n = contractNumbers(total, opts);
+    const zak = String(pr.zakazka || "").trim();
+    const zm = zak.match(/^(\d+)\s*\/\s*(\d+)$/);
+    const ver = String(opts.version || 1);
+    const corner = (zm ? `${zm[2]}/${zm[1]}` : zak) + ` (${ver})`;
+    const validDays = opts.validDays ?? 30;
+    const pad = (x) => String(x).padStart(2, "0"), dt = new Date(now);
+    const stamp = `${String(dt.getFullYear() % 100)}${pad(dt.getMonth() + 1)}${pad(dt.getDate())}-${pad(dt.getHours())}${pad(dt.getMinutes())}`;
+    const gd = [company.name || "Ekonomické stavby s.r.o.", company.address || "Pohranická ulica 391, 951 01  Štitáre"].join(", ");
+    const place = [pr.katastralne && `k.ú. ${pr.katastralne}`, pr.parcela && `p.č. ${pr.parcela}`].filter(Boolean).join(", ");
+    const money = (x) => fmtNum(x, 2);
+    const lbl = { bold: true, fontSize: 9.5 };
+    const info = (k, v) => [{ text: k, ...lbl }, { text: v == null || v === "" ? " " : String(v), fontSize: 9.5 }];
+    const row = (k, mid, v) => [{ text: k, bold: true, fontSize: 8 }, { text: mid ? mid[0] : "", fontSize: 8, color: "#9a9a9a", alignment: "right" }, { text: mid ? mid[1] : "", fontSize: 8, color: "#9a9a9a", alignment: "right" }, { text: money(v), bold: true, fontSize: 8, alignment: "right" }];
+    const W = 842 - 2 * 18;
+    return {
+      pageSize: "A4", pageOrientation: "landscape", pageMargins: [18, 34, 18, 34],
+      defaultStyle: { font: "Roboto", fontSize: 9, color: "#000000" },
+      header: () => ({ columns: [{ width: "*", text: gd, fontSize: 7.5, alignment: "center" }, { width: 90, text: corner, fontSize: 7.5, alignment: "right" }], margin: [18, 18, 18, 0] }),
+      footer: () => ({ columns: [{ width: "*", text: `Spracované dňa ${fmtDate(now)}`, fontSize: 7.5 }, { width: "*", text: "Strana      1 / 1", fontSize: 7.5, alignment: "center" }, { width: "*", text: `Zmluvný súpis prác a dodávok stavby (${stamp})`, fontSize: 7.5, alignment: "right" }], margin: [18, 0, 18, 0] }),
+      content: [
+        {
+          columns: [
+            { width: "*", stack: [
+              { text: "SÚPIS DOHODNUTÝCH PRÁC A DODÁVOK - investor", bold: true, fontSize: 15, alignment: "center", margin: [120, 4, 0, 0] },
+              { text: "pre zákazku", fontSize: 9.5, alignment: "center", margin: [120, 0, 0, 10] },
+              { table: { widths: [190, "*"], body: [
+                info("Identifikácia zákazky", zak), info("Názov stavby", opts.buildingName || "Rodinný dom"), [{ text: " ", fontSize: 6 }, { text: " ", fontSize: 6 }],
+                info("Umiestnenie stavby", place), info("Investor stavby", est.clientName || ""), info("Generálny dodávateľ stavby", gd),
+                info("Cenová úroveň", opts.priceLevel || priceLevel(priceListVersion, now)), info("Spracované dňa", fmtDate(now)), info("Verzia rozpočtu", ver),
+                info("Ponukové ceny sú platné do", fmtDate(now + validDays * 86400000)),
+              ] }, layout: { defaultBorder: false, paddingTop: () => 1, paddingBottom: () => 1, paddingLeft: () => 0 } },
+            ] },
+            { width: 170, stack: logoDataUrl ? [{ image: logoDataUrl, fit: [160, 90], alignment: "right" }] : [{ svg: ES_LOGO_SVG, width: 150, alignment: "right" }, { text: "EKONOMICKÉ STAVBY", fontSize: 9, alignment: "right", characterSpacing: 2.2, margin: [0, 4, 0, 0] }] },
+          ],
+        },
+        {
+          margin: [0, 14, 0, 6],
+          table: { widths: [W * 0.48, W * 0.12, W * 0.1, W * 0.15], body: [
+            row("Celkové náklady bez DPH:", null, n.exclVat),
+            row("DPH", ["0 % z", money(0)], 0),
+            row("DPH", [`${n.vatPct} % z`, money(n.exclVat)], n.vat),
+            row("Zľava/prirážka +/-", null, n.adj),
+            row("Zľava", null, n.discount),
+            row("DPH zľavy", [`${n.vatPct} % z`, money(n.discount)], n.discountVat),
+            row("Celkové náklady na stavbu vrátane DPH:", null, n.total),
+          ] },
+          layout: { hLineWidth: () => 0.8, vLineWidth: (i, node) => (i === 0 || i === 3 || i === node.table.widths.length ? 0.8 : 0), paddingTop: () => 4, paddingBottom: () => 4, paddingLeft: () => 6, paddingRight: () => 8 },
+        },
+        { columns: [
+          { text: "Spracoval :", fontSize: 8 }, { text: "Cena odsúhlasená -", fontSize: 8 }, { text: `Za ${company.name || "Ekonomické stavby s.r.o."}:`, fontSize: 8 },
+          { text: "za investora:", fontSize: 8 }, { text: "(podpis a dátum)", fontSize: 8, alignment: "right" },
+        ], margin: [8, 2, 0, 0] },
+      ],
+      info: { title: `Zmluvný súpis prác a dodávok stavby – ${zak || est.clientName || ""}`, author: company.name || "Ekonomické stavby s.r.o." },
+    };
+  }
+
   function studyPdfBlocks(sum, p, grey, layout) {
     const out = [];
     const rows = [];
@@ -1097,7 +1179,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     buildPrices, parsePriceListXlsx, diffPriceLists, mergeSettings, extrasFrom,
     ROLES, ROLE, roleItems, mapMaterial, processFile, readStudyWithAI, aiToStudy, mergePages, explainWithAI,
     layoutText, isTextPage, pagePrompt, textPrompt, OPENING_LABEL, OPENING_TYPES, FIXTURE_LABEL, FOUNDATION_LABEL, bathroomText, dtPieces, studySummary, groupNotes, initOutdoor, houseExtras,
-    blobToDataUrl, buildPdfDoc, pdfBlob,
+    blobToDataUrl, buildPdfDoc, pdfBlob, buildContractDoc, contractNumbers, priceLevel,
   };
 })();
 
@@ -2005,6 +2087,53 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     return { result: r, house, baseParams: eb.params, studyParams: study, variants, outdoor, outdoorParams, check, sanity };
   }
 
+  /** Export 1. strany zmluvného súpisu prác a dodávok (investor) v podobe súpisu ES. */
+  function ContractSheet({ ctx, draft, total, upd, onClose }) {
+    const pr = draft.project || {};
+    const [o, setO] = useState(() => ({ buildingName: "Rodinný dom", version: 1, validDays: 30, priceLevel: L.priceLevel(ctx.priceList.version), c1: null, ...(draft.contract || {}) }));
+    const [busy, setBusy] = useState(false);
+    const n = L.contractNumbers(total, { c1: o.c1 });
+    const missing = [!pr.zakazka && "číslo zákazky", !draft.clientName && "investor (meno klienta)", !pr.katastralne && "katastrálne územie", !pr.parcela && "číslo parcely"].filter(Boolean);
+    async function go() {
+      if (!ctx.caps.downloads) { ctx.say("Export je dostupný len v aplikácii otvorenej v prehliadači."); return; }
+      setBusy(true);
+      try {
+        let logoDataUrl = null;
+        if (ctx.company.logoAssetId) { try { const b = await (await fetch("/_blob/" + ctx.company.logoAssetId)).blob(); logoDataUrl = await L.blobToDataUrl(b); } catch (e) { /* bez loga */ } }
+        const opts = { ...o, c1: o.c1 == null || o.c1 === "" ? undefined : o.c1, version: o.version || 1 };
+        const blob = await L.pdfBlob(L.buildContractDoc({ est: draft, total, company: ctx.company, logoDataUrl, priceListVersion: ctx.priceList.version, opts }));
+        const safe = [String(pr.zakazka || "").replace(/\s*\/\s*/, "-"), draft.clientName].filter(Boolean).join("_").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9-]+/g, "_") || "prepocet";
+        await ctx.caps.downloads.save({ filename: `Zmluvny_supis_${safe}.pdf`, data: blob });
+        upd({ contract: o }); ctx.say("Súpis je pripravený"); onClose();
+      } catch (e) { if (!(e && e.code === "declined")) ctx.say("Súpis sa nepodarilo vytvoriť."); }
+      setBusy(false);
+    }
+    const f = (k, v) => setO({ ...o, [k]: v });
+    return html`<${Sheet} onClose=${onClose}>
+      <div class="card-head"><div><h2>Súpis prác a dodávok – investor</h2><div class="sub">1. strana zmluvného súpisu v podobe rozpočtu ES (PDF na šírku)</div></div></div>
+      <div class="card-pad" style="display:flex;flex-direction:column;gap:14px" id="contract-sheet">
+        ${missing.length ? html`<div class="notice alert"><div>Chýba: <b>${missing.join(", ")}</b>. Doplňte v časti Údaje projektu, inak bude v súpise prázdne miesto.</div></div>` : null}
+        <div class="grid-2">
+          <div class="field"><label for="ct-name">Názov stavby</label><input id="ct-name" class="input" value=${o.buildingName} onInput=${(e) => f("buildingName", e.target.value)} /></div>
+          <div class="field"><label for="ct-ver">Verzia rozpočtu</label><input id="ct-ver" class="input" inputmode="numeric" value=${o.version} onInput=${(e) => f("version", e.target.value.replace(/\D/g, "") || "")} /></div>
+          <div class="field"><label for="ct-level">Cenová úroveň</label><input id="ct-level" class="input" value=${o.priceLevel} onInput=${(e) => f("priceLevel", e.target.value)} /></div>
+          <div class="field"><label for="ct-valid">Platnosť ponuky (dní)</label><input id="ct-valid" class="input" inputmode="numeric" value=${o.validDays} onInput=${(e) => f("validDays", +e.target.value.replace(/\D/g, "") || 0)} /></div>
+          <div class="field"><label for="ct-c1">Projekt C1 bez DPH (€)</label><${NumInput} id="ct-c1" value=${o.c1 ?? n.c1} onChange=${(v) => f("c1", v)} /><div class="faint small">Kompenzuje sa zľavou C1 − 650 €; konečnú cenu nemení.</div></div>
+        </div>
+        <div class="table-wrap"><table class="t dense">
+          <tbody>
+            <tr><td>Celkové náklady bez DPH</td><td class="num">${fmtNum(n.exclVat, 2)}</td></tr>
+            <tr><td>DPH ${n.vatPct} %</td><td class="num">${fmtNum(n.vat, 2)}</td></tr>
+            <tr><td>Zľava</td><td class="num">${fmtNum(n.discount, 2)}</td></tr>
+            <tr><td>DPH zľavy</td><td class="num">${fmtNum(n.discountVat, 2)}</td></tr>
+            <tr><td><b>Celkové náklady na stavbu vrátane DPH</b></td><td class="num"><b>${fmtNum(n.total, 2)}</b></td></tr>
+          </tbody></table></div>
+        <div class="faint small">Cena domu bez vonkajšieho zariadenia a prípojok (tie idú v súpise ES zvlášť).</div>
+        <div class="row" style="justify-content:flex-end"><button class="btn" onClick=${onClose}>Zrušiť</button><button class="btn primary" disabled=${busy} onClick=${go}>${busy ? html`<span class="spinner"></span>` : html`<${Icon} name="download" />`}Exportovať súpis</button></div>
+      </div>
+    <//>`;
+  }
+
   /** Kontrola rozpočtu pred odoslaním ponuky – „druhý pár očí“ (pevné pravidlá, nie AI). */
   const SEV = { chyba: ["Chyba", "sev-err"], upozornenie: ["Overiť", "sev-warn"], info: ["Info", "sev-info"] };
   function SanityCard({ sanity, admin }) {
@@ -2033,6 +2162,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     const [detail, setDetail] = useState(false);
     const [saving, setSaving] = useState(false);
     const [exporting, setExporting] = useState(false);
+    const [contract, setContract] = useState(false);
     const [summary, setSummary] = useState(draft.aiSummary || "");
     const [sumBusy, setSumBusy] = useState(false);
     const maxAbs = Math.max(1, ...r.topDrivers.map((d) => Math.abs(d.deltaInclVat)));
@@ -2054,7 +2184,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
           id: draft.id, ownerId: caps.uid, ownerName: ctx.profile?.name || caps.me?.name || "", clientName: draft.clientName || "", clientNote: draft.clientNote || "", project: L.clean(draft.project || {}),
           finish: draft.finish, baseHouseId: draft.baseHouseId, baseHouseName: house.name, files, aiSummary: summary || "",
           ai: draft.ai ? { pages: draft.ai.pages || [], notes: draft.ai.notes || "", notesList: draft.ai.notesList || [], unreadable: draft.ai.unreadable || [], checks: draft.ai.checks || [], drawings: draft.ai.drawings || [], houseName: draft.ai.houseName || "" } : null, variantSel: draft.variantSel || [],
-          study: L.clone(draft.study), baseOverrides: L.clone(draft.baseOverrides || {}), matches: draft.matches || [],
+          study: L.clone(draft.study), baseOverrides: L.clone(draft.baseOverrides || {}), matches: draft.matches || [], contract: draft.contract || null,
           summary: {
             basePrice: r.basePriceInclVat, estimate: r.estimateInclVat, estimateExclVat: r.estimateExclVat, change: r.changeInclVat, changePct: r.changePct, range: r.range,
             topDrivers: r.topDrivers.map((d) => ({ key: d.key, label: d.label, delta: Math.round(d.deltaInclVat), explanation: d.explanation })),
@@ -2155,9 +2285,11 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         <button class="btn" onClick=${() => upd({ step: 2 })}><${Icon} name="back" />Upraviť údaje</button>
         <div class="row">
           <button class="btn" disabled=${saving} onClick=${save}>${saving ? html`<span class="spinner"></span>` : html`<${Icon} name="check" />`}Uložiť prepočet</button>
+          <button class="btn" onClick=${() => setContract(true)}><${Icon} name="download" />Súpis pre investora</button>
           <button class="btn primary lg" disabled=${exporting} onClick=${exportPdf}>${exporting ? html`<span class="spinner"></span>` : html`<${Icon} name="download" />`}Exportovať PDF</button>
         </div>
-      </div>`;
+      </div>
+      ${contract ? html`<${ContractSheet} ctx=${ctx} draft=${draft} total=${r.estimateInclVat} upd=${upd} onClose=${() => setContract(false)} />` : null}`;
   }
 
   // ---------- Estimates list ----------

@@ -68,6 +68,14 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     const pdfPath = path.join(SHOTS, "export.pdf"); await d.saveAs(pdfPath);
     const pdfText = require("child_process").execSync(`pdftotext -layout "${pdfPath}" -`).toString();
     if (!/154\/26/.test(pdfText) || !/Ing\. Test/.test(pdfText)) fail("v PDF chýba číslo zákazky alebo projektant");
+    await page.click("text=Súpis pre investora"); await page.waitForSelector("#contract-sheet");
+    const dl2 = page.waitForEvent("download", { timeout: 15000 });
+    await page.click("text=Exportovať súpis"); const d2 = await dl2; console.log("súpis:", d2.suggestedFilename());
+    const cPath = path.join(SHOTS, "supis.pdf"); await d2.saveAs(cPath);
+    const cText = require("child_process").execSync(`pdftotext -layout "${cPath}" -`).toString();
+    const est2 = (est || "").replace(/[^\d]/g, "");
+    if (!/SÚPIS DOHODNUTÝCH PRÁC A DODÁVOK - investor/.test(cText) || !/154\/26/.test(cText) || !/Celkové náklady na stavbu vrátane DPH/.test(cText) || !cText.replace(/\s/g, "").includes(Number(est2).toLocaleString("sk-SK").replace(/\s/g, "") + ",00")) fail("súpis pre investora: chýba hlavička, zákazka alebo celková suma " + est2);
+    require("child_process").execSync(`pdftoppm -r 70 -png -f 1 -l 1 "${cPath}" "${path.join(SHOTS, "supis")}"`);
     await page.click(".topbar >> text=Prepočty"); await page.waitForTimeout(1200);
     console.log("prepočty:", await page.$$eval("table.t tbody tr", (r) => r.length));
     if (!/154\/26/.test(await page.textContent("table.t tbody"))) fail("v zozname prepočtov chýba číslo zákazky");

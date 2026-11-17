@@ -702,6 +702,53 @@
     return { result: r, house, baseParams: eb.params, studyParams: study, variants, outdoor, outdoorParams, check, sanity };
   }
 
+  /** Export 1. strany zmluvného súpisu prác a dodávok (investor) v podobe súpisu ES. */
+  function ContractSheet({ ctx, draft, total, upd, onClose }) {
+    const pr = draft.project || {};
+    const [o, setO] = useState(() => ({ buildingName: "Rodinný dom", version: 1, validDays: 30, priceLevel: L.priceLevel(ctx.priceList.version), c1: null, ...(draft.contract || {}) }));
+    const [busy, setBusy] = useState(false);
+    const n = L.contractNumbers(total, { c1: o.c1 });
+    const missing = [!pr.zakazka && "číslo zákazky", !draft.clientName && "investor (meno klienta)", !pr.katastralne && "katastrálne územie", !pr.parcela && "číslo parcely"].filter(Boolean);
+    async function go() {
+      if (!ctx.caps.downloads) { ctx.say("Export je dostupný len v aplikácii otvorenej v prehliadači."); return; }
+      setBusy(true);
+      try {
+        let logoDataUrl = null;
+        if (ctx.company.logoAssetId) { try { const b = await (await fetch("/_blob/" + ctx.company.logoAssetId)).blob(); logoDataUrl = await L.blobToDataUrl(b); } catch (e) { /* bez loga */ } }
+        const opts = { ...o, c1: o.c1 == null || o.c1 === "" ? undefined : o.c1, version: o.version || 1 };
+        const blob = await L.pdfBlob(L.buildContractDoc({ est: draft, total, company: ctx.company, logoDataUrl, priceListVersion: ctx.priceList.version, opts }));
+        const safe = [String(pr.zakazka || "").replace(/\s*\/\s*/, "-"), draft.clientName].filter(Boolean).join("_").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9-]+/g, "_") || "prepocet";
+        await ctx.caps.downloads.save({ filename: `Zmluvny_supis_${safe}.pdf`, data: blob });
+        upd({ contract: o }); ctx.say("Súpis je pripravený"); onClose();
+      } catch (e) { if (!(e && e.code === "declined")) ctx.say("Súpis sa nepodarilo vytvoriť."); }
+      setBusy(false);
+    }
+    const f = (k, v) => setO({ ...o, [k]: v });
+    return html`<${Sheet} onClose=${onClose}>
+      <div class="card-head"><div><h2>Súpis prác a dodávok – investor</h2><div class="sub">1. strana zmluvného súpisu v podobe rozpočtu ES (PDF na šírku)</div></div></div>
+      <div class="card-pad" style="display:flex;flex-direction:column;gap:14px" id="contract-sheet">
+        ${missing.length ? html`<div class="notice alert"><div>Chýba: <b>${missing.join(", ")}</b>. Doplňte v časti Údaje projektu, inak bude v súpise prázdne miesto.</div></div>` : null}
+        <div class="grid-2">
+          <div class="field"><label for="ct-name">Názov stavby</label><input id="ct-name" class="input" value=${o.buildingName} onInput=${(e) => f("buildingName", e.target.value)} /></div>
+          <div class="field"><label for="ct-ver">Verzia rozpočtu</label><input id="ct-ver" class="input" inputmode="numeric" value=${o.version} onInput=${(e) => f("version", e.target.value.replace(/\D/g, "") || "")} /></div>
+          <div class="field"><label for="ct-level">Cenová úroveň</label><input id="ct-level" class="input" value=${o.priceLevel} onInput=${(e) => f("priceLevel", e.target.value)} /></div>
+          <div class="field"><label for="ct-valid">Platnosť ponuky (dní)</label><input id="ct-valid" class="input" inputmode="numeric" value=${o.validDays} onInput=${(e) => f("validDays", +e.target.value.replace(/\D/g, "") || 0)} /></div>
+          <div class="field"><label for="ct-c1">Projekt C1 bez DPH (€)</label><${NumInput} id="ct-c1" value=${o.c1 ?? n.c1} onChange=${(v) => f("c1", v)} /><div class="faint small">Kompenzuje sa zľavou C1 − 650 €; konečnú cenu nemení.</div></div>
+        </div>
+        <div class="table-wrap"><table class="t dense">
+          <tbody>
+            <tr><td>Celkové náklady bez DPH</td><td class="num">${fmtNum(n.exclVat, 2)}</td></tr>
+            <tr><td>DPH ${n.vatPct} %</td><td class="num">${fmtNum(n.vat, 2)}</td></tr>
+            <tr><td>Zľava</td><td class="num">${fmtNum(n.discount, 2)}</td></tr>
+            <tr><td>DPH zľavy</td><td class="num">${fmtNum(n.discountVat, 2)}</td></tr>
+            <tr><td><b>Celkové náklady na stavbu vrátane DPH</b></td><td class="num"><b>${fmtNum(n.total, 2)}</b></td></tr>
+          </tbody></table></div>
+        <div class="faint small">Cena domu bez vonkajšieho zariadenia a prípojok (tie idú v súpise ES zvlášť).</div>
+        <div class="row" style="justify-content:flex-end"><button class="btn" onClick=${onClose}>Zrušiť</button><button class="btn primary" disabled=${busy} onClick=${go}>${busy ? html`<span class="spinner"></span>` : html`<${Icon} name="download" />`}Exportovať súpis</button></div>
+      </div>
+    <//>`;
+  }
+
   /** Kontrola rozpočtu pred odoslaním ponuky – „druhý pár očí“ (pevné pravidlá, nie AI). */
   const SEV = { chyba: ["Chyba", "sev-err"], upozornenie: ["Overiť", "sev-warn"], info: ["Info", "sev-info"] };
   function SanityCard({ sanity, admin }) {
@@ -730,6 +777,7 @@
     const [detail, setDetail] = useState(false);
     const [saving, setSaving] = useState(false);
     const [exporting, setExporting] = useState(false);
+    const [contract, setContract] = useState(false);
     const [summary, setSummary] = useState(draft.aiSummary || "");
     const [sumBusy, setSumBusy] = useState(false);
     const maxAbs = Math.max(1, ...r.topDrivers.map((d) => Math.abs(d.deltaInclVat)));
@@ -751,7 +799,7 @@
           id: draft.id, ownerId: caps.uid, ownerName: ctx.profile?.name || caps.me?.name || "", clientName: draft.clientName || "", clientNote: draft.clientNote || "", project: L.clean(draft.project || {}),
           finish: draft.finish, baseHouseId: draft.baseHouseId, baseHouseName: house.name, files, aiSummary: summary || "",
           ai: draft.ai ? { pages: draft.ai.pages || [], notes: draft.ai.notes || "", notesList: draft.ai.notesList || [], unreadable: draft.ai.unreadable || [], checks: draft.ai.checks || [], drawings: draft.ai.drawings || [], houseName: draft.ai.houseName || "" } : null, variantSel: draft.variantSel || [],
-          study: L.clone(draft.study), baseOverrides: L.clone(draft.baseOverrides || {}), matches: draft.matches || [],
+          study: L.clone(draft.study), baseOverrides: L.clone(draft.baseOverrides || {}), matches: draft.matches || [], contract: draft.contract || null,
           summary: {
             basePrice: r.basePriceInclVat, estimate: r.estimateInclVat, estimateExclVat: r.estimateExclVat, change: r.changeInclVat, changePct: r.changePct, range: r.range,
             topDrivers: r.topDrivers.map((d) => ({ key: d.key, label: d.label, delta: Math.round(d.deltaInclVat), explanation: d.explanation })),
@@ -852,9 +900,11 @@
         <button class="btn" onClick=${() => upd({ step: 2 })}><${Icon} name="back" />Upraviť údaje</button>
         <div class="row">
           <button class="btn" disabled=${saving} onClick=${save}>${saving ? html`<span class="spinner"></span>` : html`<${Icon} name="check" />`}Uložiť prepočet</button>
+          <button class="btn" onClick=${() => setContract(true)}><${Icon} name="download" />Súpis pre investora</button>
           <button class="btn primary lg" disabled=${exporting} onClick=${exportPdf}>${exporting ? html`<span class="spinner"></span>` : html`<${Icon} name="download" />`}Exportovať PDF</button>
         </div>
-      </div>`;
+      </div>
+      ${contract ? html`<${ContractSheet} ctx=${ctx} draft=${draft} total=${r.estimateInclVat} upd=${upd} onClose=${() => setContract(false)} />` : null}`;
   }
 
   // ---------- Estimates list ----------

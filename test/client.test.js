@@ -72,3 +72,15 @@ test("údaje projektu: číslo zákazky, manažér, projektant, k. ú., parcela 
   ], []);
   assert.deepEqual(m.project, { zakazka: "154/26", manazer: "Mgr. B", projektant: "Ing. C", katastralne: "Sládkovičovo", parcela: "263", datumStudie: "11/2026" });
 });
+
+test("súpis pre investora: čísla 1. strany ako v rozpočte 106/26 (zľava = C1 − 650, konečná suma = cena domu)", () => {
+  const n = L.contractNumbers(201079, { c1: 23076 });
+  assert.equal(n.discount, -22426);
+  assert.equal(n.discountVat, -5157.98);
+  assert.equal(n.total, 201079);
+  assert.ok(Math.abs(n.exclVat - 185904.69) < 0.5);
+  assert.ok(Math.abs(n.exclVat + n.vat + n.discount + n.discountVat - 201079) < 0.02);
+  const d = L.contractNumbers(201079); // predvolené C1 ≈ 14,17 %
+  assert.ok(Math.abs(d.c1 - 23076) < 20);
+  assert.equal(L.priceLevel("ciselnik1 (23.03.2026)"), "260323");
+});
