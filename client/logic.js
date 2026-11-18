@@ -434,7 +434,7 @@
 "rez":{"vyskaStenyM":null,"konstrukcnaVyskaM":null,"svetlaVyskaM":null,"nadmurovkaM":null,"sklonStrechy":null,"typZalozenia":null,"dtRadyMin":null,"dtRadyMax":null,"dtHrubkaMm":null,"dtVyskaRaduMm":null,"patkaSirkaM":null,"patkaVyskaM":null,"doskaHrubkaM":null,"strkHrubkaM":null},
 "strecha":{"typ":null,"sklon":null},
 "materialy":{"obvodoveMurivo":null,"vnutorneNosneMurivo":null,"pricky":null,"zateplenieFasady":null,"zateplenieStrechy":null,"zateplenieStrechyHrubkaMm":null,"izolaciaPodlahy":null,"krytina":null,"okna":null},
-"technika":{"zdrojTepla":null,"rozvodTepla":null,"rekuperacia":null,"komin":null,"krb":null,"oknaFarba":null},
+"technika":{"zdrojTepla":null,"rozvodTepla":null,"rekuperacia":null,"komin":null,"kominTyp":null,"krb":null,"oknaFarba":null},
 "pripojky":{"vodaM":null,"kanalizaciaM":null,"dazdovaM":null,"plynM":null,"elektroM":null,"odkanalizovanie":null,"vodomernaSachta":null,"revizneSachty":null,"cerpaciaSachta":null,"terasaM2":null,"spevnenePlochyM2":null,"okapovyChodnikM2":null},
 "nadstandardy":[{"kluc":"fve5","mnozstvo":1,"popis":"FV panely na streche"}],
 "istota":{"plochy":"high","otvory":"medium","rez":"high"},
@@ -479,7 +479,7 @@ Pravidlá:
    - "patkaVyskaM" a "patkaSirkaM" = betónová pätka pod DT (napr. 750 mm na reze).
 7. MATERIÁLY: presne podľa textu (výrobok + hrúbka). Zateplenie strechy/stropu: ak skladba uvádza viac vrstiev izolácie (napr. 180 + 120 + 80 mm), zapíš ich a do "zateplenieStrechyHrubkaMm" daj súčet. Ak fasáda nemá kontaktné zateplenie (len omietka na murive), napíš „bez zateplenia“.
 8. TYP DOMU a STRECHA uveď len kódom: typDomu "bungalov" | "podkrovie" | "poschodovy"; strecha.typ "sedlova" | "valbova" | "pultova" | "plocha" | "kombinovana". "pocetPodlazi" = počet nadzemných podlaží (obytné podkrovie sa ráta).
-TECHNIKA: zdrojTepla "plyn" | "tc" | "elektro" (aj elektrické podlahové kúrenie) | "tuhe"; rozvodTepla "podlahove" | "radiatory"; rekuperacia "centralna" | "decentralna" | "ziadna"; krb true aj pre krbové kachle; komin true ak je navrhnutý komín – hľadaj komínové teleso v pôdoryse (aj „prívod vzduchu ku krbu“, symbol krbu) a komínovú hlavicu nad strechou v reze a pohľadoch (kóta vrchu komína); oknaFarba "biela" alebo konkrétna farba presne podľa podkladov (napr. "antracit RAL 7016", "zlatý dub") – len ak je farba rámov výslovne pomenovaná. Formulácia „farba podľa požiadaviek/výberu investora“, „upresní investor“ bez konkrétnej farby = null (rozpočet ES vtedy počíta biele okná).
+TECHNIKA: zdrojTepla "plyn" | "tc" | "elektro" (aj elektrické podlahové kúrenie) | "tuhe"; rozvodTepla "podlahove" | "radiatory"; rekuperacia "centralna" | "decentralna" | "ziadna"; krb true aj pre krbové kachle; kominTyp "stabil" len ak podklady výslovne uvádzajú komín Schiedel Stabil, inak "absolut" alebo null; komin true ak je navrhnutý komín – hľadaj komínové teleso v pôdoryse (aj „prívod vzduchu ku krbu“, symbol krbu) a komínovú hlavicu nad strechou v reze a pohľadoch (kóta vrchu komína); oknaFarba "biela" alebo konkrétna farba presne podľa podkladov (napr. "antracit RAL 7016", "zlatý dub") – len ak je farba rámov výslovne pomenovaná. Formulácia „farba podľa požiadaviek/výberu investora“, „upresní investor“ bez konkrétnej farby = null (rozpočet ES vtedy počíta biele okná).
 9. NADŠTANDARDY: len to, čo projekt skutočne navrhuje (nie alternatívy typu „alt. zo zámkovej dlažby“ pri okapovom chodníku, nie sokel, nie farba alebo imitácia dreva na oknách). Obklad fasády (drevo, kameň, pásiky) len ak je fasáda naozaj obložená. Podlahy a žalúzie len ak sú výslovne iné ako laminát/bez žalúzií. Krb a komín len ak sú zakreslené v pôdoryse alebo popísané v správe – všeobecné poznámky na výkrese („teleso krbu bude zhotovené…“) nie sú návrh. Ak množstvo v m alebo m² nie je uvedené, daj "mnozstvo": null. Kľúče a jednotky: ${extras}. Pri m² a m uveď množstvo, ak sa dá zistiť (napr. terasa 19,02 m²).
 10. PRÍPOJKY A POZEMOK (hlavne zo situácie a zo sprievodnej správy): dĺžky prípojok na pozemku v metroch od domu po miesto napojenia alebo merania (vodomerná šachta, pilierik elektromera, hranica pozemku) – "vodaM", "kanalizaciaM" (k žumpe, ČOV alebo k verejnej sieti), "dazdovaM", "plynM", "elektroM". Dĺžku zapíš, ak je okótovaná alebo popísaná; ak je trasa len zakreslená, odmeraj ju podľa mierky situácie a uveď to v poznámke. "odkanalizovanie" = "zumpa" | "cov" | "verejna". "vodomernaSachta" true/false, "revizneSachty" = počet revíznych šachiet, "cerpaciaSachta" true ak sa splašky prečerpávajú (čerpacia / prečerpávacia šachta). "terasaM2", "spevnenePlochyM2" (chodníky, parkovanie zo zámkovej dlažby), "okapovyChodnikM2". Žumpu, ČOV a prípojky už NEZAPISUJ do nadštandardov.
 11. Nič nevymýšľaj – čo nie je uvedené, daj null alebo prázdne pole. istota: "high" = priamo napísané, "medium" = odčítané z kót, "low" = odhad.`;
@@ -692,7 +692,7 @@ ${JSON_SHAPE}`;
     const roofTh = first(ordered.map((r) => num(r.materialy && r.materialy.zateplenieStrechyHrubkaMm)));
     if (roofTh) mats.zateplenieStrechy = `${(mats.zateplenieStrechy || "minerálna vlna").replace(/\d{1,3}(?:[.,]\d)?\s*(mm|cm)/gi, "").replace(/[+,;]\s*$/, "").trim()} ${roofTh} mm`;
     const tk = {};
-    for (const k of ["zdrojTepla", "rozvodTepla", "rekuperacia", "komin", "krb", "oknaFarba"]) tk[k] = first(ordered.map((r) => r.technika && r.technika[k]));
+    for (const k of ["zdrojTepla", "rozvodTepla", "rekuperacia", "komin", "kominTyp", "krb", "oknaFarba"]) tk[k] = first(ordered.map((r) => r.technika && r.technika[k]));
     const bool = (v) => (v === true || v === "true" || v === "áno" ? true : v === false || v === "false" || v === "nie" ? false : undefined);
 
     const extras = {};
@@ -736,7 +736,8 @@ ${JSON_SHAPE}`;
         garages: merged.some((o) => o.type === "garazova") ? merged.filter((o) => o.type === "garazova").reduce((a, o) => a + o.count, 0) : garageM2 ? Math.max(1, Math.round(garageM2 / 18)) : undefined,
         heatingSource: tk.zdrojTepla, heatingDistribution: tk.rozvodTepla,
         centralRecuperation: tk.rekuperacia ? tk.rekuperacia === "centralna" : undefined,
-        chimney: bool(tk.komin), fireplace: bool(tk.krb),
+        chimney: /stabil/i.test(String(tk.kominTyp || "")) ? true : bool(tk.komin), fireplace: bool(tk.krb),
+        chimneyType: /stabil/i.test(String(tk.kominTyp || "")) ? "stabil" : undefined,
         // prefarbené len pri pomenovanej farbe; „podľa požiadaviek investora“ bez farby = biele (rozpočet 106/26)
         windowsColored: typeof tk.oknaFarba === "string" ? WINDOW_COLOR_RE.test(tk.oknaFarba) && !/^biel/i.test(tk.oknaFarba) && !/investor|upresn|podľa výberu|podla vyberu/i.test(tk.oknaFarba) : undefined,
         openings: merged.length ? merged : undefined,

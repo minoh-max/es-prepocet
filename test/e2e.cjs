@@ -113,6 +113,16 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.click("button:has-text('Vybrať východiskový dom')"); await page.fill('input[placeholder^="Hľadať"]', "Lucie 89"); await page.waitForTimeout(500); await page.click("table.t tbody tr >> nth=0"); await page.waitForTimeout(500);
     await page.click("text=Vypočítať odhad"); await page.waitForSelector(".kpi.hero .kpi-value");
     const estAdmin = (await page.textContent(".kpi.hero .kpi-value")).replace(/[^\d]/g, "");
+    // komín: Absolut (štandardná cena) vs. Schiedel Stabil (26/126) – rozdiel 3 800 € s DPH
+    await page.click("button:has-text('Upraviť údaje')"); await page.waitForSelector("#s-kom");
+    await page.check("#s-kom"); await page.waitForSelector("#s-komtyp");
+    await page.click("text=Vypočítať odhad"); await page.waitForSelector(".kpi.hero .kpi-value"); await page.waitForTimeout(500);
+    const estAbs = Number((await page.textContent(".kpi.hero .kpi-value")).replace(/[^\d]/g, ""));
+    await page.click("button:has-text('Upraviť údaje')"); await page.waitForSelector("#s-komtyp");
+    await page.selectOption("#s-komtyp", "stabil");
+    await page.click("text=Vypočítať odhad"); await page.waitForSelector(".kpi.hero .kpi-value"); await page.waitForTimeout(500);
+    const estStab = Number((await page.textContent(".kpi.hero .kpi-value")).replace(/[^\d]/g, ""));
+    console.log("komín Absolut:", estAbs, "Stabil:", estStab); if (estStab - estAbs !== 3800) fail("komín Stabil nemá príplatok 3 800 € oproti Absolut");
     // odhlásenie a prihlásenie obchodníka (povinná zmena hesla)
     await page.click("text=Odhlásiť sa"); await page.waitForSelector("#email");
     await page.fill("#email", "jan@test.sk"); await page.fill("#password", "docasne123"); await page.click("button[type=submit]");

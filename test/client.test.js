@@ -135,3 +135,12 @@ test("položkový rozpočet: doplnkové položky štandardu ES (plávajúca podl
   for (const code of ["B7/002/00A", "B2/006", "C2/003", "A4/001/002"]) assert.ok(b.items.some((x) => x.code === code), "chýba " + code);
   assert.ok(b.items.some((x) => x.ch === "ZR" && /elektroinštal/i.test(x.name)), "elektro má byť v ZR ako v rozpočte ES");
 });
+
+test("komín Schiedel Stabil: z podkladov sa prečíta typ komína (26/126)", () => {
+  const m = L.mergePages([{ __file: "s.pdf", __page: 1, typStrany: "technicka_sprava", technika: { komin: null, kominTyp: "Schiedel Stabil 2020" } }], []);
+  assert.equal(m.study.chimney, true);
+  assert.equal(m.study.chimneyType, "stabil");
+  const m2 = L.mergePages([{ __file: "s.pdf", __page: 1, typStrany: "podorys", technika: { komin: true, kominTyp: "absolut" } }], []);
+  assert.equal(m2.study.chimney, true);
+  assert.equal(m2.study.chimneyType, undefined);
+});

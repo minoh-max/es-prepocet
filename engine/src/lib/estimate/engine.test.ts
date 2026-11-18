@@ -55,6 +55,10 @@ describe("estimate engine", () => {
     const withFireplace = computeEstimate(input({ ...base, chimney: true, fireplace: true }));
     expect(chimneyOnly.estimateInclVat).toBe(287000 + 5200); // komín podľa rozpočtu 25/120
     expect(withFireplace.estimateInclVat).toBe(chimneyOnly.estimateInclVat);
+    // komín Schiedel Stabil podľa rozpočtu 26/126 (6 662,60 € bez DPH → 9 000 € s DPH)
+    const stabil = computeEstimate(input({ ...base, chimney: true, chimneyType: "stabil" }));
+    expect(stabil.estimateInclVat).toBe(287000 + 9000);
+    expect(stabil.elements.find((e) => e.key === "komin_krb")!.study.materialLabel).toBe("komín Schiedel Stabil");
     const el = withFireplace.elements.find((e) => e.key === "komin_krb")!;
     expect(el.study.materialLabel).toMatch(/krb – dodáva klient/);
     expect(withFireplace.optimizations.some((o) => o.id === "tech-krb")).toBe(false);

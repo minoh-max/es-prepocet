@@ -24,6 +24,8 @@ export const DEFAULT_ENGINE_SETTINGS: EstimateSettings = {
   heatPumpInclVat: 11500,
   // komín Schiedel Absolut 6,3 m + nadstrešná časť 1,45 m = 3 863 € bez DPH (25/120) × 1,098 × 1,23 ≈ 5 200 € s DPH
   chimneyInclVat: 5200,
+  // komín Schiedel Stabil 2020, v. 6,45 m, nadstrešná časť 1,4 m = 6 662,60 € bez DPH (26/126) × 1,098 × 1,23 ≈ 9 000 € s DPH
+  chimneyStabilInclVat: 9000,
   // prefarbené okná (farba zvonku, vnútri biele): +23,2 % k cene bieleho okna (25/120 vs. 25/112, 25/115, 25/130)
   windowColorSurcharge: 0.232,
   defaults: { storeyHeightM: 2.95, kneeWallM: 1.0, roofOverhangM: 0.5, roofPitchDeg: 35, roofPitchBungalowDeg: 22, roofPitchAtticDeg: 40, roofPitchHipDeg: 23 },

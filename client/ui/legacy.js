@@ -282,13 +282,14 @@
         ${note(!!(study.heatingSource && study.heatingSource !== "plyn"), "Zdroj tepla", L.HEAT_LABEL.plyn, L.HEAT_LABEL[study.heatingSource])}
         ${note(!!(study.heatingDistribution && study.heatingDistribution !== "podlahove"), "Rozvod tepla", L.DIST_LABEL.podlahove, L.DIST_LABEL[study.heatingDistribution])}
         ${note(!!study.centralRecuperation, "Centrálna rekuperácia", "decentrálna rekuperácia", "centrálna rekuperácia")}
-        ${note(!!study.chimney, "Komín", "nie je v štandarde", "áno")}
+        ${note(!!study.chimney, "Komín", "nie je v štandarde", study.chimneyType === "stabil" ? "áno – Schiedel Stabil" : "áno")}
         ${note(!!study.fireplace, "Krb", "nie je v štandarde", "áno")}
         ${note(!!study.windowsColored, "Okná", "biele", "prefarbené")}
         <${CRow} label="Zdroj tepla" std=${T.kurenie} changed=${study.heatingSource && study.heatingSource !== "plyn"} c=${conf.heatingSource}><${FieldInput} id="s-heat" type="heat" value=${study.heatingSource} onChange=${(v) => setS("heatingSource", v)} /><//>
         <${CRow} label="Rozvod tepla" std="Podlahové kúrenie v celom dome" changed=${study.heatingDistribution && study.heatingDistribution !== "podlahove"} c=${conf.heatingDistribution}><${FieldInput} id="s-dist" type="dist" value=${study.heatingDistribution} onChange=${(v) => setS("heatingDistribution", v)} /><//>
         <${CRow} label="Centrálna rekuperácia" std=${T.rekuperacia} changed=${!!study.centralRecuperation} c=${conf.centralRecuperation}><${FieldInput} id="s-reku" type="bool" value=${study.centralRecuperation} onChange=${(v) => setS("centralRecuperation", v)} /><//>
         <${CRow} label="Komín" std="Nie je v štandarde" changed=${!!study.chimney} c=${conf.chimney}><${FieldInput} id="s-kom" type="bool" value=${study.chimney} onChange=${(v) => setS("chimney", v)} /><//>
+        ${study.chimney ? html`<${CRow} label="Typ komína" std="Schiedel Absolut (cca ${fmtEur(ctx.settings.chimneyInclVat || 5200)} s DPH)" changed=${study.chimneyType === "stabil"}><select id="s-komtyp" class="input" value=${study.chimneyType || "absolut"} onChange=${(e) => setS("chimneyType", e.target.value === "stabil" ? "stabil" : undefined)}><option value="absolut">Schiedel Absolut</option><option value="stabil">Schiedel Stabil (cca ${fmtEur(ctx.settings.chimneyStabilInclVat || 9000)} s DPH)</option></select><//>` : null}
         <${CRow} label="Krb" std="Nie je v štandarde" changed=${!!study.fireplace} c=${conf.fireplace}><${FieldInput} id="s-krb" type="bool" value=${study.fireplace} onChange=${(v) => setS("fireplace", v)} /><//>
         <${CRow} label="Prefarbené okná" std="Biele okná (prefarbenie +23 % k cene okien)" changed=${!!study.windowsColored} c=${conf.windowsColored}><${FieldInput} id="s-okfarba" type="bool" value=${study.windowsColored} onChange=${(v) => setS("windowsColored", v)} /><//>
         ${txt("Elektroinštalácia", T.elektro, "ako štandard", false)}
