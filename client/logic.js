@@ -1113,7 +1113,8 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     zemne: "HUS", zaklady: "HUS", zaklady_dt: "HUS", hydroizolacia: "HUS", murivo_obvodove: "HUS", murivo_vnutorne: "HUS", stropy: "HUS", vence: "HUS", preklady: "HUS",
     krov: "HUS", krytina: "HUS", okna: "HUS", dvere_vchodove: "HUS", stresne_okna: "HUS", garaz: "HUS", komin_krb: "HUS",
     pricky: "ZR", klampiarske: "ZR", zateplenie_fasady: "ZR", zateplenie_strechy: "ZR", izolacia_podlah: "ZR", omietky: "ZR", podlahy: "ZR",
-    elektro: "B2", zti: "B2", vykurovanie_rozvod: "B2", zdroj_tepla: "B2", rekuperacia: "B2", kupelne: "B3", dvere_vnutorne: "B5", obklady: "B6", lesenie: "C2",
+    // v rozpočte ES sú elektro, voda, kanalizácia a podlahové kúrenie v ZR
+    elektro: "ZR", zti: "ZR", vykurovanie_rozvod: "B2", zdroj_tepla: "B2", rekuperacia: "B2", kupelne: "B3", dvere_vnutorne: "B5", obklady: "B6", lesenie: "C2",
   };
   const DELIVERY_ELEMENTS = ["zdroj_tepla", "rekuperacia"]; // dodávky GD – bez presunu hmôt a GZS
   const ES_K = { presun: 0.02, gzs: 0.035, zisk: 0.04, vat: 0.23, keep: 650, hus: 1.6 / (1.035 * 1.04) };
@@ -1134,6 +1135,46 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     const discount = -Math.max(0, rc(ch.C1 - ES_K.keep));
     return { chapters: ch, presunZR, presunA, presunB, MO, HSV, PSV, baseGzs, gzs, baseZisk, zisk, exclVat, vat: rc(exclVat * ES_K.vat), discount, discountVat: rc(discount * ES_K.vat), total: Math.round((exclVat + discount) * (1 + ES_K.vat)) };
   }
+  /** Doplnkové položky štandardu ES pre položkový rozpočet (kalibrované na rozpočtoch 106/26 a 226/21). */
+  function standardExtraItems(result, study, prices) {
+    const g = (result.geometry && result.geometry.study) || {};
+    const el = (k) => result.elements.find((e) => e.key === k);
+    const lineQty = (k, re) => { const e = el(k); return e ? e.study.lines.filter((l) => re.test(l.name || "")).reduce((a, l) => a + l.quantity, 0) : 0; };
+    const ops = study.openings || [];
+    const winWidth = ops.filter((o) => o.type === "okno").reduce((a, o) => a + (o.widthM || 1.2) * (o.count || 1), 0) || (g.windowsCount || 0) * 1.2;
+    const innerDoors = ops.filter((o) => o.type === "vnutorne").reduce((a, o) => a + (o.count || 0), 0) || (el("dvere_vnutorne") ? el("dvere_vnutorne").study.quantity : 0);
+    const tiled = lineQty("obklady", /dlažba keramická v miestnostiach/i);
+    const baths = (study.bathroomsDetail && study.bathroomsDetail.length) || ((study.bathrooms || 1) + (study.wcs || 0));
+    const tubs = lineQty("kupelne", /vaňa/i);
+    const wcs = lineQty("kupelne", /misa záchodová|záchod/i) || baths;
+    const out = [];
+    const add = (ch, path, qty, element) => {
+      if (!(qty > 0) || !prices[path]) return;
+      const l = E.priceLine(prices, path, qty);
+      if (!l || !(l.unitCost > 0)) return;
+      out.push({ ch, element, code: path, name: l.name, unit: l.unit, qty: rc(qty), unitCost: rc(l.unitCost), total: rc(qty * l.unitCost), source: "štandard ES" });
+    };
+    add("B7", "B7/002/00A", Math.max(0, (study.usableAreaM2 || 0) - tiled), "Plávajúca podlaha");
+    add("B7", "B7/003", Math.max(0, (study.usableAreaM2 || 0) - tiled), "Plávajúca podlaha");
+    add("B6", "B6/002", tiled * 1.1, "Obklady a dlažby");
+    add("ZR", "A4/001/002", (g.perimeterM || 0) * 0.3, "Sokel");
+    add("ZR", "B1/001/v Hydrobit V60S35", g.groundFloorM2 || study.builtAreaM2 * 0.9, "Hydroizolácia pod podlahou");
+    add("ZR", "A2/01/012", innerDoors * 1.25, "Preklady v priečkach");
+    add("ZR", "A4/008/1RF125", wcs * 1.15, "Inštalačné predsteny");
+    add("ZR", "B5/009", winWidth * 1.3, "Parapety");
+    add("B5", "B5/010", winWidth, "Parapety");
+    add("ZR", "B2/006", 4, "Bleskozvod");
+    add("B1", "B1/003/bbb", baths * 9.3, "Hydroizolačná stierka");
+    add("B3", "B3/024", baths * 6 + 1, "Zariaďovacie predmety");
+    add("B3", "B3/009", tubs * 2.5, "Zariaďovacie predmety");
+    add("B2", "B2/008/001a", 1, "Technika ÚK");
+    add("B2", "B2/008/003/xxx/012 - 4", 1, "Technika ÚK");
+    add("B2", "B2/999/030/EZV 25D", 1, "Technika ÚK");
+    add("B2", "B2/003/999/001a", 1, "Vetranie");
+    if (study.floorsType === "bungalov") add("B5", "B5/019/Triant/TRIANT HOBBY", 1, "Podkrovné schody");
+    add("C2", "C2/003", 4, "Ťažká mechanizácia");
+    return out;
+  }
   /**
    * Položkový rozpočet z výsledku odhadu: položky prvkov štúdie (množstvo × cena číselníka) roztriedené do kapitol ES,
    * projekt C1 a dorovnanie na odborný odhad (položky štandardu ES, ktoré model zatiaľ nerozpisuje).
@@ -1152,9 +1193,13 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
       }
       for (const l of e.study.lines) {
         if (!(l.quantity > 0)) continue;
-        items.push({ ch, element: e.label, code: l.pathCode, name: l.name, unit: l.unit, qty: rc(l.quantity), unitCost: rc(l.unitCost), total: rc(l.quantity * l.unitCost), delivery, source: l.pathCode ? "číselník" : "sadzba" });
+        const lch = e.key === "vykurovanie_rozvod" && /podlahov/i.test(l.name || "") ? "ZR" : ch;
+        items.push({ ch: lch, element: e.label, code: l.pathCode, name: l.name, unit: l.unit, qty: rc(l.quantity), unitCost: rc(l.unitCost), total: rc(l.quantity * l.unitCost), delivery, source: l.pathCode ? "číselník" : "sadzba" });
       }
     }
+    // Doplnkové položky štandardu ES, ktoré výpočet odhadu nerozpisuje (sú v rozpočtoch 106/26 aj 226/21).
+    // Množstvá z geometrie a vybavenia domu, ceny z číselníka. Odhad nemenia – len zmenšujú dorovnanie.
+    if (opts.prices && opts.study) for (const x of standardExtraItems(result, opts.study, opts.prices)) items.push(x);
     const target = Math.round(result.estimateInclVat);
     const c1 = opts.c1 != null && opts.c1 !== "" ? Math.round(+opts.c1) : contractNumbers(target).c1;
     items.push({ ch: "C1", element: "Projekt", name: "Projektová príprava a inžinierska činnosť", unit: "sb", qty: 1, unitCost: c1, total: c1, source: "C1" });

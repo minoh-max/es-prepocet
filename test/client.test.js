@@ -122,3 +122,16 @@ test("položkový rozpočet z odhadu: súčet s DPH = odborný odhad, dorovnanie
   assert.ok(it.items.some((x) => x.delivery && x.ch === "B2"));
   assert.ok(it.items.filter((x) => x.ch === "HUS").length > 10);
 });
+
+test("položkový rozpočet: doplnkové položky štandardu ES (plávajúca podlaha, bleskozvod, mechanizácia…) zmenšia dorovnanie, súčet ostáva = odhad", () => {
+  const cis = JSON.parse(fs.readFileSync(path.join(R, "client/data/ciselnik.json"), "utf8"));
+  const settings = L.mergeSettings(undefined), prices = L.buildPrices(cis, {}), extras = L.extrasFrom(JSON.parse(fs.readFileSync(path.join(R, "client/data/houses.json"), "utf8")).config);
+  const h = houses.find((x) => x.name === "Kristína 40 C"); const eb = L.effectiveBase(h, settings);
+  const study = { ...JSON.parse(JSON.stringify(eb.params)), heatingSource: "tc" };
+  const r = ctx.ESEngine.computeEstimate({ basePriceInclVat: h.price, finish: "standard", base: eb.params, study, prices, settings, extras });
+  const a = L.buildItemized(r), b = L.buildItemized(r, { prices, study });
+  assert.equal(b.recap.total, Math.round(r.estimateInclVat));
+  assert.ok(Math.abs(b.fill) < Math.abs(a.fill), `dorovnanie ${a.fill} → ${b.fill}`);
+  for (const code of ["B7/002/00A", "B2/006", "C2/003", "A4/001/002"]) assert.ok(b.items.some((x) => x.code === code), "chýba " + code);
+  assert.ok(b.items.some((x) => x.ch === "ZR" && /elektroinštal/i.test(x.name)), "elektro má byť v ZR ako v rozpočte ES");
+});

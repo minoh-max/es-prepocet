@@ -803,8 +803,8 @@
       </form>
     <//>`;
   }
-  function ItemizedView({ ctx, draft, r, house }) {
-    const it = useMemo(() => L.buildItemized(r, { c1: draft.contract && draft.contract.c1 }), [r, draft.contract && draft.contract.c1]);
+  function ItemizedView({ ctx, draft, r, house, studyParams }) {
+    const it = useMemo(() => L.buildItemized(r, { c1: draft.contract && draft.contract.c1, prices: ctx.prices, study: studyParams }), [r, studyParams, ctx.prices, draft.contract && draft.contract.c1]);
     const [open, setOpen] = useState({});
     const rc = it.recap, money = (v) => fmtNum(v, 2);
     const groups = [];
@@ -934,7 +934,7 @@
       <button class=${"btn sm" + (tab === "polozky" ? " primary" : "")} onClick=${openItemized}><${Icon} name=${unlocked ? "check" : "lock"} />Položkový rozpočet${unlocked ? "" : " · zamknuté"}</button>
     </div>
     ${askPw ? html`<${ItemizedUnlock} ctx=${ctx} onClose=${() => setAskPw(false)} onOk=${() => { itemizedUnlocked.ok = true; setUnlocked(true); setAskPw(false); setTab("polozky"); }} />` : null}` : null;
-    if (caps.itemized && unlocked && tab === "polozky") return html`${tabs}<${ItemizedView} ctx=${ctx} draft=${draft} r=${r} house=${house} />`;
+    if (caps.itemized && unlocked && tab === "polozky") return html`${tabs}<${ItemizedView} ctx=${ctx} draft=${draft} r=${r} house=${house} studyParams=${studyParams} />`;
 
     return html`
       ${tabs}
