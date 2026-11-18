@@ -452,7 +452,7 @@ D. Výplne otvorov: označenie (O1, D2, …), kótovaná šírka, výška a vý�
 E. Výškové kóty: relatívne kóty (±0,000 = čistá podlaha 1.NP) v pôdorysoch aj rezoch – konštrukčná výška, odkvap, hrebeň, základová škára, terén.
 
 PRESNOSŤ (KRITICKÉ):
-- Nulová tolerancia hádania: ak je kóta, text alebo značka rozmazaná, prekrytá čiarou alebo nečitateľná, NEHÁDAJ ju – daj null a zapíš ju do "necitatelne" (čo a kde, napr. „výška okna O4 – pôdorys 1.NP, východná stena“). Číslo, ktoré si nevidel, nesmie byť vo výstupe.
+- Nulová tolerancia hádania: ak je kóta, text alebo značka rozmazaná, prekrytá čiarou alebo nečitateľná, NEHÁDAJ ju – daj null a zapíš ju do "necitatelne" (čo a kde, napr. „výška okna O4 – pôdorys 1.NP, východná stena“). Číslo, ktoré si nevidel, nesmie byť vo výstupe. Do "necitatelne" patria len údaje potrebné pre cenu (rozmery a kóty domu, výšky, otvory, plochy, skladby, dĺžky prípojok). Nezapisuj: svetové strany a severku (S = sever, šípka môže smerovať kamkoľvek – nie je to chyba), kóty a tvar pozemku, dispozíciu domu v situácii (číta sa z pôdorysu).
 - Krížová kontrola: súčet vnútorných kót na každej stene porovnaj s celkovou vonkajšou kótou; súčet plôch miestností porovnaj s uvedenou úžitkovou plochou podlažia; rozmery domu so zastavanou plochou. Každú kontrolu zapíš do "kontroly" s výsledkom "sedí" alebo "nesedí" a s výpočtom v "detail". Ak nesedí, uveď rozdiel.
 - Na strane bez výkresu (text) vyplň "kontroly" len pre plochy (súčet miestností vs. úžitková plocha).
 
@@ -546,6 +546,18 @@ ${JSON_SHAPE}`;
   }
 
   /** Deterministic merge of per-page results into one study description. */
+  /**
+   * Nečitateľné miesta, ktoré cenu neovplyvnia a obchodníka len mýlia: svetové strany / severka
+   * („S hore“ je sever, nie chyba), kóty a tvar pozemku a dispozícia domu zobrazená v situácii.
+   * Dĺžky prípojok zo situácie ostávajú (sú v cene vonkajšieho zariadenia).
+   */
+  function irrelevantUnreadable(u, page) {
+    const t = `${u.co || ""} ${u.kde || ""}`;
+    if (/prípoj|pripoj|vodovod|kanaliz|plyn|elektr|žump|zump|šacht|sacht|ČOV|studň/i.test(t)) return false;
+    if (/orient|svetov|kompas|ružic|ruzic|severk|\bsever\b/i.test(t)) return true;
+    const sit = page && page.typStrany === "situacia" || /situáci|situaci/i.test(t);
+    return !!(sit && /pozem|parcel|dispozíc|dispozic|hranic/i.test(t));
+  }
   function mergePages(results, catalog) {
     const R = results.filter(Boolean);
     const byType = (t) => R.filter((r) => r.typStrany === t);
@@ -718,7 +730,7 @@ ${JSON_SHAPE}`;
     // nečitateľné miesta a krížové kontroly kót a plôch (s odkazom na stranu)
     const unreadable = [], checks = [];
     for (const r of R) {
-      for (const u of Array.isArray(r.necitatelne) ? r.necitatelne : []) if (u && (u.co || u.kde)) unreadable.push({ text: [u.co, u.kde].filter(Boolean).join(" – "), src: src(r) });
+      for (const u of Array.isArray(r.necitatelne) ? r.necitatelne : []) if (u && (u.co || u.kde) && !irrelevantUnreadable(u, r)) unreadable.push({ text: [u.co, u.kde].filter(Boolean).join(" – "), src: src(r) });
       for (const k of Array.isArray(r.kontroly) ? r.kontroly : []) if (k && k.co) checks.push({ text: k.co, ok: !/nesed/i.test(k.vysledok || ""), detail: k.detail || "", src: src(r) });
     }
     const drawings = R.filter((r) => r.razitko && (r.razitko.vykres || r.razitko.mierka)).map((r) => ({ src: src(r), vykres: r.razitko.vykres || "", cislo: r.razitko.cisloVykresu || "", mierka: r.razitko.mierka || "", stupen: r.razitko.stupen || "", datum: r.razitko.datum || "" }));

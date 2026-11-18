@@ -144,3 +144,15 @@ test("komín Schiedel Stabil: z podkladov sa prečíta typ komína (26/126)", ()
   assert.equal(m2.study.chimney, true);
   assert.equal(m2.study.chimneyType, undefined);
 });
+
+test("kontrola výkresov: severka, pozemok a dispozícia v situácii sa nehlásia ako nečitateľné, prípojky áno", () => {
+  const m = L.mergePages([
+    { __file: "situacia.pdf", __page: 1, typStrany: "situacia", necitatelne: [
+      { co: "presné kóty pozemku (vnútorná dispozícia na pôdoryse je príliš malá na čítanie)", kde: "pôdorys domu zobrazený v rámci situácie" },
+      { co: "orientácia svetovej strany - kompasová ružica má označenie 'S' hore", kde: "pravý dolný rohový symbol kompasu" },
+      { co: "dĺžka kanalizačnej prípojky k žumpe", kde: "situácia" },
+    ] },
+    { __file: "1np.pdf", __page: 1, typStrany: "podorys", necitatelne: [{ co: "šírka okna O3", kde: "severná stena" }] },
+  ], []);
+  assert.deepEqual(m.unreadable.map((u) => u.text.split(" – ")[0]), ["dĺžka kanalizačnej prípojky k žumpe", "šírka okna O3"]);
+});
