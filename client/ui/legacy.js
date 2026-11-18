@@ -24,6 +24,19 @@
     const inp = useRef();
     const sample = ctx.caps.sample;
     const pages = draft.pages || [];
+    // Čítanie na pozadí: hneď po nahratí podkladov začne AI čítať strany, kým obchodník vypĺňa údaje projektu.
+    // Klik na „Rozpoznať podklady“ potom použije hotové strany a na rozpracované len počká (žiadne druhé volanie AI).
+    const [bg, setBg] = useState(null);
+    useEffect(() => {
+      if (!sample || !pages.length || draft.study) return;
+      let live = true;
+      const t = setTimeout(() => {
+        setBg({ done: 0, total: 0 });
+        L.readStudyWithAI(sample, pages, ctx.prices, ctx.settings.extrasCatalog, (done, total) => { if (live) setBg({ done, total }); })
+          .then(() => live && setBg((b) => ({ ...(b || {}), finished: true })), () => live && setBg(null));
+      }, 600);
+      return () => { live = false; clearTimeout(t); };
+    }, [pages.length, pages.map((p) => p.file + p.page).join("|")]);
 
     async function addFiles(list) {
       setErr(null);
@@ -93,6 +106,7 @@
       </div>
       ${busy ? html`<div class="card card-pad row"><div class="spinner"></div><div class="grow"><b>${busy}</b>${aiText ? html`<div class="faint small" style="margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${aiText}</div>` : null}</div></div>` : null}
       ${err ? html`<div class="notice bad">${err}</div>` : null}
+      ${bg && !busy && pages.length ? html`<div id="bg-read" class="notice"><div>${bg.finished ? html`<b>Podklady sú prečítané</b> – kliknite na „Rozpoznať podklady“.` : html`<b>Claude už číta podklady na pozadí</b>${bg.total ? ` (${bg.done} z ${bg.total})` : ""} – medzitým vyplňte údaje klienta a projektu.`}</div></div>` : null}
       ${pages.length ? html`<div class="card">
         <div class="card-head"><div><h2>Nahraté strany</h2><div class="sub">${pages.length} strán z ${new Set(pages.map((p) => p.file)).size} súborov</div></div>
           <button class="btn plain sm" onClick=${() => upd({ pages: [], localFiles: [] })}><${Icon} name="trash" />Odstrániť všetko</button></div>

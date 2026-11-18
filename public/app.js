@@ -848,6 +848,17 @@ ${JSON_SHAPE}`;
       return v.r;
     } catch (e) { return null; }
   }
+  // Rozpracované požiadavky: ak sa tá istá strana číta znova (čítanie na pozadí po nahratí + klik „Rozpoznať“),
+  // počká sa na prebiehajúcu odpoveď namiesto druhého volania AI.
+  const aiInflight = new Map();
+  function cachedAi(key, fn) {
+    const hit = aiCacheGet(key);
+    if (hit) return Promise.resolve(hit);
+    if (key && aiInflight.has(key)) return aiInflight.get(key);
+    const pr = Promise.resolve().then(fn).then((r) => aiCachePut(key, r));
+    if (key) { aiInflight.set(key, pr); pr.then(() => aiInflight.delete(key), () => aiInflight.delete(key)); }
+    return pr;
+  }
   function aiCachePut(key, r) {
     if (key && r && typeof r === "object") {
       const put = () => localStorage.setItem(key, JSON.stringify({ at: Date.now(), r }));
@@ -891,20 +902,19 @@ ${JSON_SHAPE}`;
             const text = j.pages.map((p) => `--- strana ${p.page} ---\n${p.text}`).join("\n");
             const prompt = textPrompt(j.file, label, text, extrasCatalog);
             const key = await aiCacheKey(prompt);
-            const r = aiCacheGet(key) || aiCachePut(key, await sample.json(prompt, { modelTier: "complex", cache: false }));
+            const r = await cachedAi(key, () => sample.json(prompt, { modelTier: "complex", cache: false }));
             results[i] = { ...r, typStrany: "technicka_sprava", otvory: [], __file: j.file, __page: j.pages[0].page, __pages: label };
           } else {
             const p = j.page;
             // ten istý výkres (rovnaké bajty strany a rovnaké zadanie) sa neposiela AI druhýkrát – pri opakovaní
             // čítania sa znova číta len to, čo zlyhalo alebo sa zmenilo
             const key = await aiCacheKey(pagePrompt(p, [], extrasCatalog) + "|" + maxCount, p.blob);
-            let r = aiCacheGet(key);
-            if (!r) {
+            const r = await cachedAi(key, async () => {
               const imgs = maxCount ? await pageImages(p, maxCount) : [];
               const opts = { modelTier: "complex", cache: false };
               if (imgs.length) opts.images = imgs.map((x) => x.blob);
-              r = aiCachePut(key, await sample.json(pagePrompt(p, imgs.map((x) => x.label), extrasCatalog), opts));
-            }
+              return sample.json(pagePrompt(p, imgs.map((x) => x.label), extrasCatalog), opts);
+            });
             results[i] = { ...r, __file: p.file, __page: p.page };
           }
         } catch (e) {
@@ -1736,6 +1746,19 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     const inp = useRef();
     const sample = ctx.caps.sample;
     const pages = draft.pages || [];
+    // Čítanie na pozadí: hneď po nahratí podkladov začne AI čítať strany, kým obchodník vypĺňa údaje projektu.
+    // Klik na „Rozpoznať podklady“ potom použije hotové strany a na rozpracované len počká (žiadne druhé volanie AI).
+    const [bg, setBg] = useState(null);
+    useEffect(() => {
+      if (!sample || !pages.length || draft.study) return;
+      let live = true;
+      const t = setTimeout(() => {
+        setBg({ done: 0, total: 0 });
+        L.readStudyWithAI(sample, pages, ctx.prices, ctx.settings.extrasCatalog, (done, total) => { if (live) setBg({ done, total }); })
+          .then(() => live && setBg((b) => ({ ...(b || {}), finished: true })), () => live && setBg(null));
+      }, 600);
+      return () => { live = false; clearTimeout(t); };
+    }, [pages.length, pages.map((p) => p.file + p.page).join("|")]);
 
     async function addFiles(list) {
       setErr(null);
@@ -1805,6 +1828,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
       </div>
       ${busy ? html`<div class="card card-pad row"><div class="spinner"></div><div class="grow"><b>${busy}</b>${aiText ? html`<div class="faint small" style="margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${aiText}</div>` : null}</div></div>` : null}
       ${err ? html`<div class="notice bad">${err}</div>` : null}
+      ${bg && !busy && pages.length ? html`<div id="bg-read" class="notice"><div>${bg.finished ? html`<b>Podklady sú prečítané</b> – kliknite na „Rozpoznať podklady“.` : html`<b>Claude už číta podklady na pozadí</b>${bg.total ? ` (${bg.done} z ${bg.total})` : ""} – medzitým vyplňte údaje klienta a projektu.`}</div></div>` : null}
       ${pages.length ? html`<div class="card">
         <div class="card-head"><div><h2>Nahraté strany</h2><div class="sub">${pages.length} strán z ${new Set(pages.map((p) => p.file)).size} súborov</div></div>
           <button class="btn plain sm" onClick=${() => upd({ pages: [], localFiles: [] })}><${Icon} name="trash" />Odstrániť všetko</button></div>

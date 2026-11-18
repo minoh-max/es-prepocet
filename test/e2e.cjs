@@ -49,8 +49,13 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     // nový prepočet so štúdiou
     await page.click(".topbar >> text=Nový prepočet"); await page.waitForTimeout(400);
     await page.click("summary:has-text('Údaje projektu')").catch(() => {}); await page.fill("#pr-zakazka", "154/26"); await page.fill("#pr-parcela", "263"); await page.fill("#pr-projektant", "Ing. Test");
-    await page.setInputFiles("input[type=file]", [path.join(ROOT, "test", "fixtures", "plan.png")]); await page.waitForTimeout(800);
+    // čítanie na pozadí: po nahratí sa hneď spustí AI, klik „Rozpoznať“ nesmie poslať tú istú stranu druhýkrát
+    let aiPosts = 0; page.on("request", (r) => { if (r.method() === "POST" && /\/api\/ai(\/jobs)?$/.test(new URL(r.url()).pathname)) aiPosts++; });
+    await page.setInputFiles("input[type=file]", [path.join(ROOT, "test", "fixtures", "plan.png")]);
+    await page.waitForSelector("#bg-read", { timeout: 15000 }); console.log("čítanie na pozadí:", (await page.textContent("#bg-read")).trim());
+    await page.waitForTimeout(400);
     await page.click("text=Rozpoznať podklady"); await page.waitForSelector("text=Poznámka k podkladom", { timeout: 30000 }); await page.waitForTimeout(800);
+    console.log("požiadavky na AI (1 strana):", aiPosts); if (aiPosts !== 1) fail("strana sa poslala AI " + aiPosts + "× (čakám 1×)");
     // východiskový dom musí obchodník potvrdiť – dovtedy sa odhad nedá vypočítať
     if (!(await page.isDisabled("button:has-text('Vypočítať odhad')"))) fail("odhad sa dá vypočítať bez potvrdenia východiskového domu");
     await page.click("button:has-text('Potvrdiť dom')"); await page.waitForTimeout(300);

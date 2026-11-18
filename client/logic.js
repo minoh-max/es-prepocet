@@ -848,6 +848,17 @@ ${JSON_SHAPE}`;
       return v.r;
     } catch (e) { return null; }
   }
+  // Rozpracované požiadavky: ak sa tá istá strana číta znova (čítanie na pozadí po nahratí + klik „Rozpoznať“),
+  // počká sa na prebiehajúcu odpoveď namiesto druhého volania AI.
+  const aiInflight = new Map();
+  function cachedAi(key, fn) {
+    const hit = aiCacheGet(key);
+    if (hit) return Promise.resolve(hit);
+    if (key && aiInflight.has(key)) return aiInflight.get(key);
+    const pr = Promise.resolve().then(fn).then((r) => aiCachePut(key, r));
+    if (key) { aiInflight.set(key, pr); pr.then(() => aiInflight.delete(key), () => aiInflight.delete(key)); }
+    return pr;
+  }
   function aiCachePut(key, r) {
     if (key && r && typeof r === "object") {
       const put = () => localStorage.setItem(key, JSON.stringify({ at: Date.now(), r }));
@@ -891,20 +902,19 @@ ${JSON_SHAPE}`;
             const text = j.pages.map((p) => `--- strana ${p.page} ---\n${p.text}`).join("\n");
             const prompt = textPrompt(j.file, label, text, extrasCatalog);
             const key = await aiCacheKey(prompt);
-            const r = aiCacheGet(key) || aiCachePut(key, await sample.json(prompt, { modelTier: "complex", cache: false }));
+            const r = await cachedAi(key, () => sample.json(prompt, { modelTier: "complex", cache: false }));
             results[i] = { ...r, typStrany: "technicka_sprava", otvory: [], __file: j.file, __page: j.pages[0].page, __pages: label };
           } else {
             const p = j.page;
             // ten istý výkres (rovnaké bajty strany a rovnaké zadanie) sa neposiela AI druhýkrát – pri opakovaní
             // čítania sa znova číta len to, čo zlyhalo alebo sa zmenilo
             const key = await aiCacheKey(pagePrompt(p, [], extrasCatalog) + "|" + maxCount, p.blob);
-            let r = aiCacheGet(key);
-            if (!r) {
+            const r = await cachedAi(key, async () => {
               const imgs = maxCount ? await pageImages(p, maxCount) : [];
               const opts = { modelTier: "complex", cache: false };
               if (imgs.length) opts.images = imgs.map((x) => x.blob);
-              r = aiCachePut(key, await sample.json(pagePrompt(p, imgs.map((x) => x.label), extrasCatalog), opts));
-            }
+              return sample.json(pagePrompt(p, imgs.map((x) => x.label), extrasCatalog), opts);
+            });
             results[i] = { ...r, __file: p.file, __page: p.page };
           }
         } catch (e) {
