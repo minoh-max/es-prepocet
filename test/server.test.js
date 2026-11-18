@@ -72,13 +72,15 @@ test("položkový rozpočet: prístup povoľuje admin, odomknutie heslom", async
 });
 
 test("výpočet na serveri: obchodník dostane cenu bez výrobných cien, číselník bez cien", async () => {
-  const draft = { baseHouseId: "", finish: "kluc", study: { usableAreaM2: 120, floors: "1" } };
-  const houses = require("../client/data/houses.json");
-  draft.baseHouseId = houses.houses.find((h) => h.price).id;
+  const { L, houses } = require("../server/calc").load();
+  const h = houses.houses.find((x) => x.price);
+  const study = { ...L.effectiveBase(h, L.mergeSettings()).params }; study.usableAreaM2 = Math.round(study.usableAreaM2 * 1.1);
+  const draft = { baseHouseId: h.id, finish: "kluc", study: JSON.parse(JSON.stringify(study)) };
   assert.equal((await call("x", "POST", "/api/calc", { draft })).status, 401);
   const a = await call("a", "POST", "/api/calc", { draft, itemized: true });
   const j = await call("j", "POST", "/api/calc", { draft, itemized: true });
   assert.equal(a.status, 200); assert.equal(j.status, 200);
+  assert.ok(a.body.result.estimateInclVat > h.price); // väčší dom → vyššia cena
   assert.equal(j.body.result.estimateInclVat, a.body.result.estimateInclVat);
   assert.ok(a.body.result.elements.some((e) => e.base.cost > 0 && e.base.lines.length));
   assert.ok(j.body.result.elements.every((e) => e.base.cost === 0 && e.study.cost === 0 && !e.base.lines.length));
