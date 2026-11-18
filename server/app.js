@@ -203,12 +203,44 @@ function createApp(pool, opts = {}) {
 
   // ---- dokumenty (rovnaký model ako v Claude: kolekcia/dokument/…) ----
   const docOut = (row) => ({ id: row.path.split("/").pop(), path: row.path, exists: true, data: row.data, version: row.version, updatedAt: Number(row.updated_at) });
+  const calc = require("./calc");
+  async function readConfig() {
+    const r = await pool.query("SELECT data FROM docs WHERE path = $1", ["config/app"]);
+    return (r.rows[0] && r.rows[0].data) || {};
+  }
+  async function activePriceList(cfg) {
+    const id = cfg && cfg.priceList && cfg.priceList.assetId;
+    if (!id) return null;
+    const r = await pool.query("SELECT data FROM assets WHERE id = $1", [id]);
+    try { return r.rows[0] ? JSON.parse(Buffer.from(r.rows[0].data).toString("utf8")) : null; } catch (e) { return null; }
+  }
+  // Výpočet odhadu na serveri (obchodník nedostáva číselník s výrobnými cenami).
+  app.post("/api/calc", json, auth(), async (req, res, next) => {
+    try {
+      const u = req.user, draft = (req.body && req.body.draft) || {};
+      const cfg = await readConfig();
+      const out = calc.calculate({ draft, config: cfg, priceList: await activePriceList(cfg), costs: u.role === "admin", itemized: !!(req.body && req.body.itemized) && (u.role === "admin" || !!u.itemized) });
+      res.json(out);
+    } catch (e) { if (e.status) return res.status(e.status).json({ error: e.message, code: e.code }); next(e); }
+  });
+  // Číselník: administrátor celý, ostatní bez výrobných cien (názvy pre výber materiálu + ceny prípojok).
+  app.get("/data/ciselnik.json", auth(), (req, res, next) => {
+    try {
+      const full = calc.load().ciselnik;
+      res.setHeader("Cache-Control", "private, no-store");
+      res.json(req.user.role === "admin" ? full : calc.stripPriceList(full));
+    } catch (e) { next(e); }
+  });
+
   app.get("/api/doc", auth(), async (req, res, next) => {
     try {
       const p = String(req.query.path || "");
       if (!validPath(p) || p.split("/").length % 2) return res.status(400).json({ error: "Neplatná cesta dokumentu.", code: "bad_path" });
       const r = await pool.query("SELECT * FROM docs WHERE path = $1", [p]);
-      res.json(r.rows[0] ? docOut(r.rows[0]) : { id: p.split("/").pop(), path: p, exists: false, data: null });
+      const out = r.rows[0] ? docOut(r.rows[0]) : { id: p.split("/").pop(), path: p, exists: false, data: null };
+      // nastavenia firmy: obchodník nedostane úpravy cien číselníka ani sadzby výpočtu
+      if (p === "config/app" && req.user.role !== "admin" && out.data) out.data = calc.stripConfig(out.data);
+      res.json(out);
     } catch (e) { next(e); }
   });
   app.get("/api/collection", auth(), async (req, res, next) => {
@@ -269,6 +301,10 @@ function createApp(pool, opts = {}) {
   app.get("/_blob/:id", auth(), async (req, res, next) => {
     try {
       if (!/^[0-9a-f]{32}$/.test(req.params.id)) return res.status(404).end();
+      if (req.user.role !== "admin") {
+        const cfg = await readConfig();
+        if (cfg.priceList && cfg.priceList.assetId === req.params.id) return res.status(403).json({ error: "Číselník je dostupný len administrátorovi.", code: "forbidden" });
+      }
       const r = await pool.query("SELECT mime, name, data FROM assets WHERE id = $1", [req.params.id]);
       const a = r.rows[0];
       if (!a) return res.status(404).end();

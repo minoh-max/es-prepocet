@@ -71,6 +71,40 @@ test("položkový rozpočet: prístup povoľuje admin, odomknutie heslom", async
   assert.equal((await call("j", "POST", "/api/auth/verify", { password: "noveheslo1" })).status, 403);
 });
 
+test("výpočet na serveri: obchodník dostane cenu bez výrobných cien, číselník bez cien", async () => {
+  const draft = { baseHouseId: "", finish: "kluc", study: { usableAreaM2: 120, floors: "1" } };
+  const houses = require("../client/data/houses.json");
+  draft.baseHouseId = houses.houses.find((h) => h.price).id;
+  assert.equal((await call("x", "POST", "/api/calc", { draft })).status, 401);
+  const a = await call("a", "POST", "/api/calc", { draft, itemized: true });
+  const j = await call("j", "POST", "/api/calc", { draft, itemized: true });
+  assert.equal(a.status, 200); assert.equal(j.status, 200);
+  assert.equal(j.body.result.estimateInclVat, a.body.result.estimateInclVat);
+  assert.ok(a.body.result.elements.some((e) => e.base.cost > 0 && e.base.lines.length));
+  assert.ok(j.body.result.elements.every((e) => e.base.cost === 0 && e.study.cost === 0 && !e.base.lines.length));
+  assert.ok(a.body.itemized && a.body.itemized.items.length);
+  assert.equal(j.body.itemized, undefined); // bez povolenia administrátora
+  const jan = (await call("j", "GET", "/api/auth/me")).body.user;
+  await call("a", "PATCH", "/api/users/" + jan.id, { itemized: true });
+  const j2 = await call("j", "POST", "/api/calc", { draft, itemized: true });
+  assert.equal(j2.body.itemized.recap.total, a.body.itemized.recap.total);
+  await call("a", "PATCH", "/api/users/" + jan.id, { itemized: false });
+  assert.equal((await call("j", "POST", "/api/calc", { draft: { ...draft, baseHouseId: "nie" } })).status, 400);
+  // číselník: obchodník len názvy (výrobné ceny chýbajú, okrem prípojok A3/A5), admin všetko
+  const cj = (await call("j", "GET", "/data/ciselnik.json")).body, ca = (await call("a", "GET", "/data/ciselnik.json")).body;
+  assert.equal(cj.stripped, true); assert.ok(!ca.stripped);
+  const wall = (L) => L.items.find((i) => i[0].startsWith("A2/01/001/"));
+  assert.ok(wall(ca)[4] || wall(ca)[5]); assert.equal(wall(cj)[4], null); assert.equal(wall(cj)[5], null);
+  assert.ok(cj.items.some((i) => i[0].startsWith("A3/") && (i[4] || i[5])));
+  assert.equal((await call("x", "GET", "/data/ciselnik.json")).status, 401);
+  // nastavenia firmy: obchodník nedostane úpravy cien ani sadzby
+  await call("a", "PUT", "/api/doc", { path: "config/app", data: { company: { name: "ES" }, priceOverrides: { "A2/01/001/x": { mat: 1 } }, engine: { rates: { x: 1 }, vatRate: 0.23 } } });
+  const cfgJ = (await call("j", "GET", "/api/doc?path=config/app")).body.data, cfgA = (await call("a", "GET", "/api/doc?path=config/app")).body.data;
+  assert.equal(cfgJ.priceOverrides, undefined); assert.equal(cfgJ.engine.rates, undefined); assert.equal(cfgJ.engine.vatRate, 0.23);
+  assert.ok(cfgA.priceOverrides && cfgA.engine.rates);
+  await call("a", "PUT", "/api/doc", { path: "config/app", data: {} });
+});
+
 test("oprávnenia dokumentov: obchodník len svoje, admin všetko", async () => {
   const me = (await call("j", "GET", "/api/auth/me")).body.user;
   assert.equal((await call("j", "PUT", "/api/doc", { path: "config/app", data: { a: 1 } })).status, 403);

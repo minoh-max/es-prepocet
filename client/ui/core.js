@@ -118,7 +118,9 @@
         if (user) { try { [me, id, admin] = await Promise.all([user.me(), user.id(), user.canEdit()]); } catch (e) { /* signed out */ } }
         // položkový rozpočet: administrátor alebo používateľ, ktorému ho administrátor povolil
         const itemized = !!admin || !!(window.ESServer && window.ESServer.me && window.ESServer.me.itemized);
-        caps.current = { db, user, sample, assets, downloads, me, uid: id, admin, itemized };
+        // výpočet na serveri: kto nie je administrátor, nedostane číselník s výrobnými cenami (len názvy položiek)
+        const serverCalc = !admin && !!(window.ESServer && window.ESServer.calc);
+        caps.current = { db, user, sample, assets, downloads, me, uid: id, admin, itemized, serverCalc };
         setBoot((b) => ({ ...b, capsReady: true }));
         if (db) {
           db.doc("config/app").onSnapshot((s) => setConfig(s.exists ? s.data() : {}), () => {});
@@ -139,10 +141,10 @@
     // load imported price list version
     useEffect(() => {
       const pl = config.priceList;
-      if (pl && pl.assetId) {
+      if (pl && pl.assetId && caps.current.admin) {
         fetch("/_blob/" + pl.assetId).then((r) => (r.ok ? r.json() : null)).then((j) => j && j.items && setPriceList(j)).catch(() => {});
       } else if (boot.ciselnik) setPriceList(boot.ciselnik);
-    }, [config.priceList && config.priceList.assetId, boot.ciselnik]);
+    }, [config.priceList && config.priceList.assetId, boot.ciselnik, boot.capsReady]);
 
     const ctx = useMemo(() => {
       if (!boot.houses || !priceList) return null;

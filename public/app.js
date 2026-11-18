@@ -1097,6 +1097,108 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
       info: { title: `Odborný cenový odhad – ${est.clientName || house.name}`, author: rep.name || company.name },
     };
   }
+  function computeAll(ctx, draft, calcOpts = {}) {
+    const L = window.ESL;
+    const house0 = ctx.housesById[draft.baseHouseId];
+    const eb0 = L.effectiveBase(house0, ctx.settings);
+    const study = L.clean({ ...draft.study });
+    delete study.materialTexts; delete study.evidence;
+    // bez zastavanej plochy sa nedá počítať geometria: odvoď ju z východiskového domu v pomere úžitkových plôch
+    if (!study.builtAreaM2 && study.usableAreaM2 && eb0.params.builtAreaM2 && eb0.params.usableAreaM2) study.builtAreaM2 = Math.round(eb0.params.builtAreaM2 * study.usableAreaM2 / eb0.params.usableAreaM2 * 10) / 10;
+    study.materials = L.clean(draft.study.materials || {});
+    const outdoorParams = draft.study.outdoor || L.initOutdoor(draft.study, ctx.settings);
+    delete study.outdoor;
+    study.extras = L.houseExtras(study, ctx.settings);
+    if (!study.extras.length) delete study.extras;
+    const outdoor = E.computeOutdoor(outdoorParams, ctx.prices, ctx.settings, ctx.extras.accessories || {});
+    // Kontrola a hlavný odhad: ten istý prepočet z 5 najpodobnejších katalógových domov. Ceny katalógových domov rovnakej
+    // veľkosti sa líšia aj o 10 %, preto je medián spoľahlivejší ako jeden dom (katalóg: do 3 % pri 40 % domov oproti 34 %;
+    // rozpočty ES 2023–2026: priemerná odchýlka 1,8 % oproti 3,0 %). Ak klient vychádza z konkrétneho domu, počíta sa z neho.
+    const priceOf = (h) => (draft.finish === "holodom" ? h.hol : h.price);
+    const peers = L.findClosestHouses(study, ctx.houses, "", 5).map((m) => m.house);
+    if (!peers.some((h) => h.id === house0.id)) peers.unshift(house0);
+    const cross = peers.map((h) => {
+      if (!priceOf(h)) return null;
+      const v = E.computeEstimate({ basePriceInclVat: priceOf(h), finish: draft.finish, base: L.effectiveBase(h, ctx.settings).params, study, prices: ctx.prices, settings: ctx.settings, extras: ctx.extras });
+      return { id: h.id, name: h.name, estimate: v.estimateInclVat, house: h };
+    }).filter(Boolean);
+    const byEst = [...cross].sort((a, b) => a.estimate - b.estimate);
+    const medianItem = byEst.length ? byEst[Math.floor(byEst.length / 2)] : null;
+    const useMedian = draft.baseMode === "median" && byEst.length >= 3 && medianItem;
+    const house = useMedian ? medianItem.house : house0;
+    const eb = useMedian ? L.effectiveBase(house, ctx.settings) : eb0;
+    const r = E.computeEstimate({
+      basePriceInclVat: draft.finish === "holodom" ? house.hol : house.price,
+      finish: draft.finish, base: eb.params, study, prices: ctx.prices, settings: ctx.settings, extras: ctx.extras,
+    });
+    r.thresholdPct = ctx.settings.optimizationThresholdPct;
+    for (const x of study.extras || []) if (!x.qty) { const d = ctx.settings.extrasCatalog.find((c) => c.key === x.key); r.warnings.push(`Nadštandard „${d ? d.label : x.key}“ nemá v štúdii množstvo – doplňte ho v kroku Kontrola údajov.`); }
+    const basePrice = draft.finish === "holodom" ? house.hol : house.price;
+    const run = (st) => E.computeEstimate({ basePriceInclVat: basePrice, finish: draft.finish, base: eb.params, study: st, prices: ctx.prices, settings: ctx.settings, extras: ctx.extras });
+    const variants = [{ id: "studia", name: "Štúdia klienta", note: "podľa predložených podkladov", estimate: r.estimateInclVat, changePct: r.changePct, main: true }];
+    const mk = (id, name, note, patches) => {
+      if (!patches.length) return;
+      let st = study;
+      for (const pt of patches) st = E.applyPatch(st, pt);
+      const v = run(st);
+      if (Math.abs(v.estimateInclVat - r.estimateInclVat) < 1) return;
+      variants.push({ id, name, note, estimate: v.estimateInclVat, changePct: v.changePct });
+    };
+    const opts = r.optimizations || [];
+    if (study.extras && study.extras.length) mk("bez-nadstandardov", "Bez nadštandardov", "štúdia bez nadštandardov zistených v podkladoch", [{ dropExtras: study.extras.map((x) => x.key) }]);
+    const eco = opts.filter((o) => ["material", "technologia", "nadstandard"].includes(o.kind));
+    mk("usporny", "Úsporný variant", eco.length ? eco.map((o) => o.title).join("; ") : "", eco.map((o) => o.patch));
+    const sel = opts.filter((o) => (draft.variantSel || []).includes(o.id));
+    mk("vlastny", "Vlastný variant", sel.map((o) => o.title).join("; "), sel.map((o) => o.patch));
+    const sorted = byEst.map((x) => x.estimate);
+    const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : r.estimateInclVat;
+    const est0 = (cross.find((x) => x.id === house0.id) || { estimate: r.estimateInclVat }).estimate;
+    const check = { peers: cross.map(({ house: _h, ...x }) => x), median, low: sorted[0], high: sorted[sorted.length - 1], devPct: (est0 / median - 1) * 100,
+      useMedian: !!useMedian, selected: { id: house0.id, name: house0.name, estimate: est0 }, medianHouse: medianItem ? medianItem.name : null };
+    // Kontrola rozpočtu pred odoslaním: vnútorná konzistencia množstiev, cien a rozsahu (bez AI, nič nehodnotí trhovo)
+    const sanity = E.sanityCheck({ result: r, base: eb.params, study, outdoor: outdoorParams, settings: ctx.settings });
+    const out = { result: r, house, baseParams: eb.params, studyParams: study, variants, outdoor, outdoorParams, check, sanity };
+    if (calcOpts.itemized) out.itemized = buildItemized(r, { c1: draft.contract && draft.contract.c1, prices: ctx.prices, study });
+    return out;
+  }
+  /** Výpočtový kontext z dát (rovnako ako v aplikácii): číselník, nastavenia, katalóg. */
+  function calcContext({ houses, priceList, config = {} }) {
+    const prices = buildPrices(priceList, config.priceOverrides || {});
+    const settings = mergeSettings(config.engine);
+    const extras = extrasFrom(houses.config);
+    return { prices, settings, extras, houses: houses.houses, housesById: Object.fromEntries(houses.houses.map((h) => [h.id, h])), houseCfg: houses.config, config };
+  }
+  /**
+   * Výsledok pre používateľa bez prístupu k výrobným cenám: bez nákladových cien položiek a riadkov
+   * (ostávajú množstvá, vplyvy s DPH a vysvetlenia). Položkový rozpočet len s povolením.
+   */
+  function sanitizeCalc(out, { costs = false, itemized = false } = {}) {
+    if (costs) return itemized ? out : { ...out, itemized: undefined };
+    const side = (x) => ({ quantity: x.quantity, unit: x.unit, materialLabel: x.materialLabel, cost: 0, lines: [] });
+    const r = out.result;
+    const result = { ...r, elements: r.elements.map((e) => ({ ...e, base: side(e.base), study: side(e.study) })), topDrivers: r.topDrivers.map((e) => ({ ...e, base: side(e.base), study: side(e.study) })) };
+    const sanity = out.sanity ? { ...out.sanity, findings: out.sanity.findings.map(({ adminDetail, ...f }) => f) } : out.sanity;
+    return { ...out, result, sanity, itemized: itemized ? out.itemized : undefined };
+  }
+  /** Položky číselníka, ktoré vidí aj obchodník: vonkajšie siete a spevnené plochy (cenník prípojok pre klienta). */
+  const PUBLIC_PRICE_PREFIXES = ["A3/", "A5/"];
+  /** Číselník bez výrobných cien (pre používateľov bez práv administrátora). */
+  function stripPriceList(list) {
+    const F = list.fields || ["path", "name", "spec", "unit", "mat", "lab", "mech", "fix"];
+    const iMat = F.indexOf("mat"), iLab = F.indexOf("lab"), iMech = F.indexOf("mech"), iFix = F.indexOf("fix"), iNote = F.indexOf("note");
+    return { ...list, stripped: true, items: list.items.map((it) => {
+      if (PUBLIC_PRICE_PREFIXES.some((p) => String(it[0]).startsWith(p))) return it;
+      const c = it.slice(); for (const i of [iMat, iLab, iMech, iFix, iNote]) if (i >= 0) c[i] = null; return c;
+    }) };
+  }
+  /** Nastavenia firmy bez výrobných údajov (úpravy cien číselníka, sadzby) pre obchodníka. */
+  function stripConfig(cfg) {
+    if (!cfg) return cfg;
+    const { priceOverrides, ...rest } = cfg;
+    if (rest.engine) { const { rates, ...eng } = rest.engine; rest.engine = eng; }
+    return rest;
+  }
+
   // ---------- Položkový rozpočet v štruktúre ES (nadstavba – prístup povoľuje administrátor) ----------
   // Rekapitulácia overená na rozpočtoch 106/26 a 226/21 (bez DPH ±0,01 €, s DPH presne):
   // MO = HUS + ZR + presun 2 % zo ZR; HSV/PSV = A/B + presun 2 % bez dodávok GD; GZS 3,5 % z (MO + HSV + PSV − dodávky);
@@ -1346,7 +1448,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     buildPrices, parsePriceListXlsx, diffPriceLists, mergeSettings, extrasFrom,
     ROLES, ROLE, roleItems, mapMaterial, processFile, readStudyWithAI, aiToStudy, mergePages, explainWithAI,
     layoutText, isTextPage, pagePrompt, textPrompt, OPENING_LABEL, OPENING_TYPES, FIXTURE_LABEL, FOUNDATION_LABEL, bathroomText, dtPieces, studySummary, groupNotes, initOutdoor, houseExtras,
-    blobToDataUrl, buildPdfDoc, pdfBlob, buildContractDoc, contractNumbers, priceLevel, recapES, buildItemized, itemizedWorkbook, ES_CHAPTERS,
+    blobToDataUrl, buildPdfDoc, pdfBlob, buildContractDoc, contractNumbers, priceLevel, recapES, buildItemized, itemizedWorkbook, ES_CHAPTERS, computeAll, calcContext, sanitizeCalc, stripPriceList, stripConfig,
   };
 })();
 
@@ -1471,7 +1573,9 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
         if (user) { try { [me, id, admin] = await Promise.all([user.me(), user.id(), user.canEdit()]); } catch (e) { /* signed out */ } }
         // položkový rozpočet: administrátor alebo používateľ, ktorému ho administrátor povolil
         const itemized = !!admin || !!(window.ESServer && window.ESServer.me && window.ESServer.me.itemized);
-        caps.current = { db, user, sample, assets, downloads, me, uid: id, admin, itemized };
+        // výpočet na serveri: kto nie je administrátor, nedostane číselník s výrobnými cenami (len názvy položiek)
+        const serverCalc = !admin && !!(window.ESServer && window.ESServer.calc);
+        caps.current = { db, user, sample, assets, downloads, me, uid: id, admin, itemized, serverCalc };
         setBoot((b) => ({ ...b, capsReady: true }));
         if (db) {
           db.doc("config/app").onSnapshot((s) => setConfig(s.exists ? s.data() : {}), () => {});
@@ -1492,10 +1596,10 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     // load imported price list version
     useEffect(() => {
       const pl = config.priceList;
-      if (pl && pl.assetId) {
+      if (pl && pl.assetId && caps.current.admin) {
         fetch("/_blob/" + pl.assetId).then((r) => (r.ok ? r.json() : null)).then((j) => j && j.items && setPriceList(j)).catch(() => {});
       } else if (boot.ciselnik) setPriceList(boot.ciselnik);
-    }, [config.priceList && config.priceList.assetId, boot.ciselnik]);
+    }, [config.priceList && config.priceList.assetId, boot.ciselnik, boot.capsReady]);
 
     const ctx = useMemo(() => {
       if (!boot.houses || !priceList) return null;
@@ -1703,7 +1807,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     const std = ctx.prices[ctx.settings.standardSpec[role]];
     return html`<select id=${id} class="input" value=${value || ""} onChange=${(e) => onChange(e.target.value || undefined)}>
       <option value="">${std ? `Štandard ES: ${E.itemLabel(std)}` : "— štandard ES —"}</option>
-      ${items.map((it) => html`<option value=${it.path_code}>${E.itemLabel(it)}${it.check_level === "CHYBA" ? " ⚠" : ""} · ${fmtNum((it.price_material || 0) + (it.price_labor || 0) + (it.price_machinery || 0), 2)} €/${it.unit}</option>`)}
+      ${items.map((it) => html`<option value=${it.path_code}>${E.itemLabel(it)}${it.check_level === "CHYBA" ? " ⚠" : ""}${ctx.caps.admin ? ` · ${fmtNum((it.price_material || 0) + (it.price_labor || 0) + (it.price_machinery || 0), 2)} €/${it.unit}` : ""}</option>`)}
     </select>`;
   }
 
@@ -1716,7 +1820,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     return html`<select id=${id} class="input" value=${val} onChange=${(e) => onChange(e.target.value === "__std" ? undefined : e.target.value)}>
       ${!m.roofInsulation ? html`<option value="__std">${std ? `Štandard ES: ${E.itemLabel(std)}` : "— štandard ES —"}</option>` : null}
       <option value="">bez 2. vrstvy</option>
-      ${items.map((it) => html`<option value=${it.path_code}>${E.itemLabel(it)} · ${fmtNum((it.price_material || 0) + (it.price_labor || 0), 2)} €/${it.unit}</option>`)}
+      ${items.map((it) => html`<option value=${it.path_code}>${E.itemLabel(it)}${ctx.caps.admin ? ` · ${fmtNum((it.price_material || 0) + (it.price_labor || 0), 2)} €/${it.unit}` : ""}</option>`)}
     </select>`;
   }
 
@@ -2202,67 +2306,33 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
   }
 
   // ---------- Step 3: result ----------
-  function computeFor(ctx, draft) {
-    const house0 = ctx.housesById[draft.baseHouseId];
-    const eb0 = L.effectiveBase(house0, ctx.settings);
-    const study = L.clean({ ...draft.study });
-    delete study.materialTexts; delete study.evidence;
-    // bez zastavanej plochy sa nedá počítať geometria: odvoď ju z východiskového domu v pomere úžitkových plôch
-    if (!study.builtAreaM2 && study.usableAreaM2 && eb0.params.builtAreaM2 && eb0.params.usableAreaM2) study.builtAreaM2 = Math.round(eb0.params.builtAreaM2 * study.usableAreaM2 / eb0.params.usableAreaM2 * 10) / 10;
-    study.materials = L.clean(draft.study.materials || {});
-    const outdoorParams = draft.study.outdoor || L.initOutdoor(draft.study, ctx.settings);
-    delete study.outdoor;
-    study.extras = L.houseExtras(study, ctx.settings);
-    if (!study.extras.length) delete study.extras;
-    const outdoor = E.computeOutdoor(outdoorParams, ctx.prices, ctx.settings, ctx.extras.accessories || {});
-    // Kontrola a hlavný odhad: ten istý prepočet z 5 najpodobnejších katalógových domov. Ceny katalógových domov rovnakej
-    // veľkosti sa líšia aj o 10 %, preto je medián spoľahlivejší ako jeden dom (katalóg: do 3 % pri 40 % domov oproti 34 %;
-    // rozpočty ES 2023–2026: priemerná odchýlka 1,8 % oproti 3,0 %). Ak klient vychádza z konkrétneho domu, počíta sa z neho.
-    const priceOf = (h) => (draft.finish === "holodom" ? h.hol : h.price);
-    const peers = L.findClosestHouses(study, ctx.houses, "", 5).map((m) => m.house);
-    if (!peers.some((h) => h.id === house0.id)) peers.unshift(house0);
-    const cross = peers.map((h) => {
-      if (!priceOf(h)) return null;
-      const v = E.computeEstimate({ basePriceInclVat: priceOf(h), finish: draft.finish, base: L.effectiveBase(h, ctx.settings).params, study, prices: ctx.prices, settings: ctx.settings, extras: ctx.extras });
-      return { id: h.id, name: h.name, estimate: v.estimateInclVat, house: h };
-    }).filter(Boolean);
-    const byEst = [...cross].sort((a, b) => a.estimate - b.estimate);
-    const medianItem = byEst.length ? byEst[Math.floor(byEst.length / 2)] : null;
-    const useMedian = draft.baseMode === "median" && byEst.length >= 3 && medianItem;
-    const house = useMedian ? medianItem.house : house0;
-    const eb = useMedian ? L.effectiveBase(house, ctx.settings) : eb0;
-    const r = E.computeEstimate({
-      basePriceInclVat: draft.finish === "holodom" ? house.hol : house.price,
-      finish: draft.finish, base: eb.params, study, prices: ctx.prices, settings: ctx.settings, extras: ctx.extras,
-    });
-    r.thresholdPct = ctx.settings.optimizationThresholdPct;
-    for (const x of study.extras || []) if (!x.qty) { const d = ctx.settings.extrasCatalog.find((c) => c.key === x.key); r.warnings.push(`Nadštandard „${d ? d.label : x.key}“ nemá v štúdii množstvo – doplňte ho v kroku Kontrola údajov.`); }
-    const basePrice = draft.finish === "holodom" ? house.hol : house.price;
-    const run = (st) => E.computeEstimate({ basePriceInclVat: basePrice, finish: draft.finish, base: eb.params, study: st, prices: ctx.prices, settings: ctx.settings, extras: ctx.extras });
-    const variants = [{ id: "studia", name: "Štúdia klienta", note: "podľa predložených podkladov", estimate: r.estimateInclVat, changePct: r.changePct, main: true }];
-    const mk = (id, name, note, patches) => {
-      if (!patches.length) return;
-      let st = study;
-      for (const pt of patches) st = E.applyPatch(st, pt);
-      const v = run(st);
-      if (Math.abs(v.estimateInclVat - r.estimateInclVat) < 1) return;
-      variants.push({ id, name, note, estimate: v.estimateInclVat, changePct: v.changePct });
-    };
-    const opts = r.optimizations || [];
-    if (study.extras && study.extras.length) mk("bez-nadstandardov", "Bez nadštandardov", "štúdia bez nadštandardov zistených v podkladoch", [{ dropExtras: study.extras.map((x) => x.key) }]);
-    const eco = opts.filter((o) => ["material", "technologia", "nadstandard"].includes(o.kind));
-    mk("usporny", "Úsporný variant", eco.length ? eco.map((o) => o.title).join("; ") : "", eco.map((o) => o.patch));
-    const sel = opts.filter((o) => (draft.variantSel || []).includes(o.id));
-    mk("vlastny", "Vlastný variant", sel.map((o) => o.title).join("; "), sel.map((o) => o.patch));
-    const sorted = byEst.map((x) => x.estimate);
-    const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : r.estimateInclVat;
-    const est0 = (cross.find((x) => x.id === house0.id) || { estimate: r.estimateInclVat }).estimate;
-    const check = { peers: cross.map(({ house: _h, ...x }) => x), median, low: sorted[0], high: sorted[sorted.length - 1], devPct: (est0 / median - 1) * 100,
-      useMedian: !!useMedian, selected: { id: house0.id, name: house0.name, estimate: est0 }, medianHouse: medianItem ? medianItem.name : null };
-    // Kontrola rozpočtu pred odoslaním: vnútorná konzistencia množstiev, cien a rozsahu (bez AI, nič nehodnotí trhovo)
-    const sanity = E.sanityCheck({ result: r, base: eb.params, study, outdoor: outdoorParams, settings: ctx.settings });
-    return { result: r, house, baseParams: eb.params, studyParams: study, variants, outdoor, outdoorParams, check, sanity };
+  // Výpočet je v logic.js (L.computeAll) – rovnaký kód beží aj na serveri pre používateľov bez prístupu k číselníku.
+  function computeFor(ctx, draft) { return L.computeAll(ctx, draft); }
+  /** Údaje prepočtu, ktoré posiela obchodník na server (číselník s výrobnými cenami v prehliadači nemá). */
+  const calcPayload = (draft) => ({ study: draft.study, baseOverrides: draft.baseOverrides || {}, baseHouseId: draft.baseHouseId, baseMode: draft.baseMode, finish: draft.finish, variantSel: draft.variantSel || [], contract: draft.contract || null });
+  /** Výpočet: administrátor v prehliadači, ostatní na serveri (s krátkym oneskorením pri písaní). */
+  function useCalc(ctx, draft, itemized, local0 = true) {
+    const server = !!ctx.caps.serverCalc;
+    const local = useMemo(() => (server || !local0 ? null : computeFor(ctx, draft)), [server, local0, draft.study, draft.baseOverrides, draft.baseHouseId, draft.baseMode, draft.finish, draft.variantSel, ctx.prices, ctx.settings]);
+    const [remote, setRemote] = useState(null);
+    const [error, setError] = useState(null);
+    const key = server ? JSON.stringify(calcPayload(draft)) + (itemized ? "|it" : "") : "";
+    useEffect(() => {
+      if (!server) return;
+      let live = true;
+      const t = setTimeout(() => {
+        window.ESServer.calc(calcPayload(draft), { itemized }).then((o) => { if (!live) return; setError(null); setRemote({ ...o, house: ctx.housesById[o.houseId] }); })
+          .catch((e) => live && setError((e && e.message) || "Výpočet sa nepodaril."));
+      }, remote ? 300 : 0);
+      return () => { live = false; clearTimeout(t); };
+    }, [key]);
+    if (!server) return local;
+    return remote && remote.house ? { ...remote, pending: false } : { loading: true, error };
   }
+  function CalcWait({ error }) {
+    return html`<div class="card" style="text-align:center;padding:32px">${error ? html`<div class="notice alert"><div>${error}</div></div>` : html`<span class="spinner"></span> <span class="muted">Počítam odhad…</span>`}</div>`;
+  }
+
 
   /** Export 1. strany zmluvného súpisu prác a dodávok (investor) v podobe súpisu ES. */
   function ContractSheet({ ctx, draft, total, upd, onClose }) {
@@ -2358,8 +2428,15 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
       </form>
     <//>`;
   }
-  function ItemizedView({ ctx, draft, r, house, studyParams }) {
-    const it = useMemo(() => L.buildItemized(r, { c1: draft.contract && draft.contract.c1, prices: ctx.prices, study: studyParams }), [r, studyParams, ctx.prices, draft.contract && draft.contract.c1]);
+  function ItemizedView(props) {
+    // obchodník s povolením: položkový rozpočet zostaví server (ceny položiek z číselníka)
+    const calc = useCalc(props.ctx, props.draft, true, false);
+    if (!props.ctx.caps.serverCalc) return html`<${ItemizedTable} ...${props} />`;
+    if (calc.loading || !calc.itemized) return html`<${CalcWait} error=${calc.error || (!calc.loading && !calc.itemized ? "Položkový rozpočet nie je pre tento účet povolený." : null)} />`;
+    return html`<${ItemizedTable} ...${props} it0=${calc.itemized} />`;
+  }
+  function ItemizedTable({ ctx, draft, r, house, studyParams, it0 }) {
+    const it = useMemo(() => it0 || L.buildItemized(r, { c1: draft.contract && draft.contract.c1, prices: ctx.prices, study: studyParams }), [it0, r, studyParams, ctx.prices, draft.contract && draft.contract.c1]);
     const [open, setOpen] = useState({});
     const rc = it.recap, money = (v) => fmtNum(v, 2);
     const groups = [];
@@ -2407,7 +2484,12 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
   }
 
   function StepResult({ ctx, draft, upd }) {
-    const { result: r, house, baseParams, studyParams, variants, outdoor, check, sanity } = useMemo(() => computeFor(ctx, draft), [draft.study, draft.baseOverrides, draft.baseHouseId, draft.baseMode, draft.finish, draft.variantSel, ctx.prices, ctx.settings]);
+    const calc = useCalc(ctx, draft, false);
+    if (calc.loading) return html`<${CalcWait} error=${calc.error} />`;
+    return html`<${StepResultView} ctx=${ctx} draft=${draft} upd=${upd} calc=${calc} />`;
+  }
+  function StepResultView({ ctx, draft, upd, calc }) {
+    const { result: r, house, baseParams, studyParams, variants, outdoor, check, sanity } = calc;
     const toggleSel = (id) => { const cur = draft.variantSel || []; upd({ variantSel: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] }); };
     const [detail, setDetail] = useState(false);
     const [saving, setSaving] = useState(false);

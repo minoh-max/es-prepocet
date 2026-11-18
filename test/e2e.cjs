@@ -106,6 +106,13 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await inp.fill("300000"); await inp.press("Enter"); await page.waitForTimeout(1200);
     await page.screenshot({ path: SHOTS + "/05_estimates.png", fullPage: true });
     console.log("presnosť:", (await page.textContent(".accuracy").catch(() => "–")).replace(/\s+/g, " ").trim());
+    // ručný prepočet administrátora (Lucie 89) – obchodník musí dostať zo servera rovnakú cenu
+    await page.goto(U); await page.waitForSelector(".topbar"); await page.waitForTimeout(600);
+    await page.click(".topbar >> text=Nový prepočet"); await page.waitForTimeout(600);
+    await page.click("button:has-text('Zadať údaje ručne')"); await page.waitForTimeout(800);
+    await page.click("button:has-text('Vybrať východiskový dom')"); await page.fill('input[placeholder^="Hľadať"]', "Lucie 89"); await page.waitForTimeout(500); await page.click("table.t tbody tr >> nth=0"); await page.waitForTimeout(500);
+    await page.click("text=Vypočítať odhad"); await page.waitForSelector(".kpi.hero .kpi-value");
+    const estAdmin = (await page.textContent(".kpi.hero .kpi-value")).replace(/[^\d]/g, "");
     // odhlásenie a prihlásenie obchodníka (povinná zmena hesla)
     await page.click("text=Odhlásiť sa"); await page.waitForSelector("#email");
     await page.fill("#email", "jan@test.sk"); await page.fill("#password", "docasne123"); await page.click("button[type=submit]");
@@ -120,6 +127,12 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.click("button:has-text('Vybrať východiskový dom')"); await page.fill('input[placeholder^="Hľadať"]', "Lucie 89"); await page.waitForTimeout(500); await page.click("table.t tbody tr >> nth=0"); await page.waitForTimeout(500);
     await page.click("text=Vypočítať odhad"); await page.waitForSelector(".kpi.hero .kpi-value");
     if (await page.$("#result-tabs")) fail("obchodník bez povolenia vidí položkový rozpočet");
+    const estSales = (await page.textContent(".kpi.hero .kpi-value")).replace(/[^\d]/g, "");
+    console.log("výpočet na serveri – admin:", estAdmin, "obchodník:", estSales); if (!estAdmin || estAdmin !== estSales) fail("obchodník dostal iný odhad ako administrátor");
+    const cis = await page.evaluate(async () => { const j = await (await fetch("data/ciselnik.json")).json(); const w = j.items.find((i) => i[0].startsWith("A2/01/001/")); return { stripped: !!j.stripped, mat: w[4], lab: w[5] }; });
+    console.log("číselník u obchodníka:", JSON.stringify(cis)); if (!cis.stripped || cis.mat != null || cis.lab != null) fail("obchodník dostal číselník s výrobnými cenami");
+    const optTxt = await page.evaluate(() => [...document.querySelectorAll("option")].map((o) => o.textContent).join("|"));
+    if (/€\/m2|€\/ks/.test(optTxt)) fail("obchodník vidí výrobné ceny v roletkách materiálov");
     const vs = await page.evaluate(async () => (await fetch("/api/auth/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: "noveheslo1" }) })).status);
     console.log("obchodník odomknutie bez povolenia (čakám 403):", vs); if (vs !== 403) fail("server pustil obchodníka bez povolenia");
     const r = await page.evaluate(async () => (await fetch("/api/doc", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "config/app", data: { x: 1 } }) })).status);
