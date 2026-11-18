@@ -827,6 +827,37 @@ ${JSON_SHAPE}`;
     zateplenieStrechy: "roofInsulation", izolaciaPodlahy: "floorInsulation", krytina: "roofing", okna: "window",
   };
 
+  // ---------- pamäť prečítaných strán (v prehliadači, 30 dní) ----------
+  const AI_CACHE_VER = "v1", AI_CACHE_DAYS = 30;
+  async function aiCacheKey(text, blob) {
+    try {
+      const enc = new TextEncoder().encode(AI_CACHE_VER + "|" + text);
+      const parts = [enc];
+      if (blob) parts.push(new Uint8Array(await blob.arrayBuffer()));
+      const all = new Uint8Array(parts.reduce((n, x) => n + x.length, 0));
+      let o = 0; for (const x of parts) { all.set(x, o); o += x.length; }
+      const h = await crypto.subtle.digest("SHA-256", all);
+      return "es.ai." + Array.from(new Uint8Array(h)).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 40);
+    } catch (e) { return null; }
+  }
+  function aiCacheGet(key) {
+    if (!key) return null;
+    try {
+      const v = JSON.parse(localStorage.getItem(key) || "null");
+      if (!v || Date.now() - v.at > AI_CACHE_DAYS * 864e5) return null;
+      return v.r;
+    } catch (e) { return null; }
+  }
+  function aiCachePut(key, r) {
+    if (key && r && typeof r === "object") {
+      const put = () => localStorage.setItem(key, JSON.stringify({ at: Date.now(), r }));
+      try { put(); } catch (e) {
+        // plná pamäť prehliadača: zmaž staré záznamy a skús znova
+        try { for (const k of Object.keys(localStorage)) if (k.startsWith("es.ai.")) localStorage.removeItem(k); put(); } catch (e2) { /* bez pamäte */ }
+      }
+    }
+    return r;
+  }
   /** Reads the study: text pages of each file in one text call, drawings page by page (overview + high-res tiles), 2 in parallel; then merges. */
   async function readStudyWithAI(sample, pages, prices, extrasCatalog, onProgress) {
     const limits = await sample.limits().catch(() => null);
@@ -858,14 +889,22 @@ ${JSON_SHAPE}`;
           if (j.kind === "text") {
             const label = j.pages.length > 1 ? `${j.pages[0].page}–${j.pages[j.pages.length - 1].page}` : String(j.pages[0].page);
             const text = j.pages.map((p) => `--- strana ${p.page} ---\n${p.text}`).join("\n");
-            const r = await sample.json(textPrompt(j.file, label, text, extrasCatalog), { modelTier: "complex", cache: false });
+            const prompt = textPrompt(j.file, label, text, extrasCatalog);
+            const key = await aiCacheKey(prompt);
+            const r = aiCacheGet(key) || aiCachePut(key, await sample.json(prompt, { modelTier: "complex", cache: false }));
             results[i] = { ...r, typStrany: "technicka_sprava", otvory: [], __file: j.file, __page: j.pages[0].page, __pages: label };
           } else {
             const p = j.page;
-            const imgs = maxCount ? await pageImages(p, maxCount) : [];
-            const opts = { modelTier: "complex", cache: false };
-            if (imgs.length) opts.images = imgs.map((x) => x.blob);
-            const r = await sample.json(pagePrompt(p, imgs.map((x) => x.label), extrasCatalog), opts);
+            // ten istý výkres (rovnaké bajty strany a rovnaké zadanie) sa neposiela AI druhýkrát – pri opakovaní
+            // čítania sa znova číta len to, čo zlyhalo alebo sa zmenilo
+            const key = await aiCacheKey(pagePrompt(p, [], extrasCatalog) + "|" + maxCount, p.blob);
+            let r = aiCacheGet(key);
+            if (!r) {
+              const imgs = maxCount ? await pageImages(p, maxCount) : [];
+              const opts = { modelTier: "complex", cache: false };
+              if (imgs.length) opts.images = imgs.map((x) => x.blob);
+              r = aiCachePut(key, await sample.json(pagePrompt(p, imgs.map((x) => x.label), extrasCatalog), opts));
+            }
             results[i] = { ...r, __file: p.file, __page: p.page };
           }
         } catch (e) {
@@ -878,7 +917,8 @@ ${JSON_SHAPE}`;
       }
     }
     // 5 strán naraz: štúdia so 7 – 10 stranami sa prečíta 2 – 3× rýchlejšie ako po dvoch (pri preťažení server čaká a opakuje)
-    await Promise.all(Array.from({ length: Math.min(5, jobs.length) }, () => worker()));
+    // všetky strany bežnej štúdie naraz (do 8): celkový čas ≈ čas najpomalšej strany (pri preťažení server čaká a opakuje)
+    await Promise.all(Array.from({ length: Math.min(8, jobs.length) }, () => worker()));
     if (!results.some(Boolean)) throw new Error(errors[0] || "Žiadna strana sa nedala prečítať.");
     const merged = mergePages(results, extrasCatalog);
     return { merged, raw: results.filter(Boolean), study: aiToStudy(merged, prices), errors, jobs: jobs.length };
