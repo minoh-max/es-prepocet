@@ -11,6 +11,7 @@ Cieľ: odhad zo štúdie (+ odpovedí klienta) do **±2 %** od rozpočtu. Odhad 
 - Porovnávaj s **verziou 1 rozpočtu** (urobená zo štúdie). Konečná verzia obsahuje zmeny dohodnuté neskôr (226/21: verzia 8 od r. 2021 → −8 %, nedá sa vysvetliť štúdiou).
 - Suma domu = „Celkové náklady na stavbu vrátane DPH“ v **Klient** (bez prípojok). Prípojky a pozemok sú v **Klient_outdoor**, v Etapách ako PR.
 - Projekt C1 je v cene bez DPH a kompenzuje sa zľavou C1 − 650 € → konečnú cenu nemení.
+- **Vždy najnovšia cenová úroveň** (pokyn ES): aplikácia počíta s najnovším číselníkom a najnovšími cenami katalógu. Pri porovnaní vždy zisti „Cenová úroveň“ na 1. strane rozpočtu. Rozpočty so staršou úrovňou (napr. 241210) majú jednotkové ceny nižšie (241210 → 260504: o 7–15 % na spárovaných položkách výroby) – pred porovnaním ich preveď na najnovšiu úroveň alebo ich vyhodnocuj zvlášť; koeficienty modelu nastavuj podľa rozpočtov najnovšej úrovne.
 
 ## 2. Rozbor odchýlky
 1. Prečítaj štúdiu tak, ako ju číta aplikácia (alebo použi uložené odpovede AI), a spočítaj odhad: jeden dom aj medián z 5 domov.
