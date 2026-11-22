@@ -948,6 +948,12 @@
             : html` Odhad z domu ${check.selected.name} sedí s ostatnými domami (${fmtNum(check.devPct, 1)} %).`}
         <div class="small muted" style="margin-top:4px">${check.peers.map((p) => `${p.name} ${fmtEur(p.estimate)}`).join(" · ")}</div>
       </div></div>` : null}
+      ${calc.areaCheck ? html`<div class=${"notice " + (Math.abs(calc.areaCheck.diffPct) > 7 ? "alert" : "info")} id="area-check"><div>
+        <b>Odhad z plochy (vzorec z ${calc.areaCheck.n} domov katalógu): ${fmtEur(calc.areaCheck.value)}</b>${" – "}${fmtNum(calc.areaCheck.perUsableM2, 0)} €/m² úžitkovej, ${fmtNum(calc.areaCheck.perBuiltM2, 0)} €/m² zastavanej.
+        Odborný odhad z položiek štúdie je o ${fmtNum(Math.abs(calc.areaCheck.diffPct), 1)} % ${calc.areaCheck.diffPct >= 0 ? "vyšší" : "nižší"}.
+        ${Math.abs(calc.areaCheck.diffPct) > 7 ? html` <b>Rozdiel je nad 7 % – skontrolujte plochy a nadštandardy v kroku Kontrola údajov.</b>` : null}
+        <div class="small muted" style="margin-top:4px">${calc.areaCheck.parts.map((p) => `${p.label} = ${fmtEur(p.value)}`).join(" · ")}. Rýchly orientačný prepočet (presnosť ±${fmtNum(calc.areaCheck.medianErrPct, 1)} % na katalógu); pre ponuku platí odborný odhad z položiek.</div>
+      </div></div>` : null}
       <${SanityCard} sanity=${sanity} admin=${caps.admin} />
       <div class="card">
         <div class="card-head"><div><h2>Čo cenu ovplyvnilo najviac</h2><div class="sub">Rozdiel voči domu ${house.name}, s DPH</div></div>

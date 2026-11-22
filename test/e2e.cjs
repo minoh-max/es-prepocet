@@ -63,6 +63,7 @@ const MAP = { "htm@3.1.1/preact/standalone.umd.js": NM + "htm/preact/standalone.
     await page.click("text=Vypočítať odhad"); await page.waitForTimeout(1200);
     await page.screenshot({ path: SHOTS + "/04_result.png" });
     const est = await page.textContent(".kpi.hero .kpi-value"); console.log("odhad:", est);
+    const ac = await page.textContent("#area-check").catch(() => null); console.log("odhad z plochy:", (ac || "").replace(/\s+/g, " ").slice(0, 160)); if (!ac || !/Odhad z plochy/.test(ac)) fail("chýba odhad z plochy"); else await page.locator("#area-check").screenshot({ path: SHOTS + "/04d_area.png" });
     const cc = await page.textContent("#cross-check").catch(() => null); console.log("kontrola:", (cc || "").replace(/\s+/g, " ").slice(0, 140)); if (!cc || !/Kontrola z \d+ podobných domov/.test(cc)) fail("chýba kontrola z podobných domov");
     const medBtn = await page.$("#cross-check button:has-text('Použiť medián')");
     if (medBtn) {

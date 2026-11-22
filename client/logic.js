@@ -1221,9 +1221,82 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
     // Kontrola rozpočtu pred odoslaním: vnútorná konzistencia množstiev, cien a rozsahu (bez AI, nič nehodnotí trhovo)
     const sanity = E.sanityCheck({ result: r, base: eb.params, study, outdoor: outdoorParams, settings: ctx.settings });
     const out = { result: r, house, baseParams: eb.params, studyParams: study, variants, outdoor, outdoorParams, check, sanity };
+    // druhý, nezávislý prepočet: vzorec z plochy podľa celého katalógu ES (kontrola hlavného odhadu z položiek)
+    out.areaCheck = areaEstimate(ctx, study, draft.finish, r.estimateInclVat);
     if (calcOpts.itemized) out.itemized = buildItemized(r, { c1: draft.contract && draft.contract.c1, prices: ctx.prices, study });
     return out;
   }
+  // ---------- Odhad z plochy: vzorec z celého katalógu ES ----------
+  // Cena (s DPH) = a + b × úžitková + c × zastavaná + g × garážové státia + úprava za strechu (plochá / valbová oproti sedlovej),
+  // zvlášť pre bungalov, podkrovie a poschodový dom; metóda najmenších štvorcov na všetkých domoch katalógu daného typu
+  // (bez 2 % extrémov €/m²). Koeficienty sa počítajú z aktuálneho katalógu → vždy najnovšie ceny z webu ES.
+  // Overenie (11/2026): katalóg medián ±3,8–6,7 %, 5 rozpočtov ES priemer 3,9 % (odhad z položiek 1,4 %).
+  const AREA_TYPES = { bungalov: 2, podkrovie: 1, poschodovy: 3 };
+  const areaModelCache = new WeakMap();
+  function lsq(A, y) {
+    const n = A[0].length, M = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => A.reduce((s, r) => s + r[i] * r[j], 0)));
+    const v = Array.from({ length: n }, (_, i) => A.reduce((s, r, k) => s + r[i] * y[k], 0));
+    for (let i = 0; i < n; i++) {
+      let pv = i; for (let k = i + 1; k < n; k++) if (Math.abs(M[k][i]) > Math.abs(M[pv][i])) pv = k;
+      [M[i], M[pv]] = [M[pv], M[i]]; [v[i], v[pv]] = [v[pv], v[i]];
+      if (Math.abs(M[i][i]) < 1e-9) return null;
+      for (let k = i + 1; k < n; k++) { const f = M[k][i] / M[i][i]; for (let j = i; j < n; j++) M[k][j] -= f * M[i][j]; v[k] -= f * v[i]; }
+    }
+    const x = new Array(n).fill(0);
+    for (let i = n - 1; i >= 0; i--) { let t = v[i]; for (let j = i + 1; j < n; j++) t -= M[i][j] * x[j]; x[i] = t / M[i][i]; }
+    return x;
+  }
+  /** Koeficienty vzorca z katalógu (pre cenu na kľúč aj holodom), uložené pre daný zoznam domov. */
+  function areaModel(houses) {
+    if (areaModelCache.has(houses)) return areaModelCache.get(houses);
+    const out = {};
+    for (const [type, kind] of Object.entries(AREA_TYPES)) {
+      for (const fin of ["standard", "holodom"]) {
+        const key = fin === "holodom" ? "hol" : "price";
+        let hs = houses.filter((h) => h.kind === kind && h[key] > 0 && h.pu > 0 && h.pz > 0);
+        if (hs.length < 12) continue;
+        const ppm = hs.map((h) => h[key] / h.pu).sort((a, b) => a - b);
+        const lo = ppm[Math.floor(ppm.length * 0.02)], hi = ppm[Math.ceil(ppm.length * 0.98) - 1];
+        hs = hs.filter((h) => h[key] / h.pu >= lo && h[key] / h.pu <= hi);
+        const A = hs.map((h) => [1, h.pu, h.pz, h.gar || 0, h.roof === 3 ? 1 : 0, h.roof === 1 ? 1 : 0]);
+        const x = lsq(A, hs.map((h) => h[key]));
+        if (!x) continue;
+        const err = A.map((r, i) => Math.abs(r.reduce((s, a, j) => s + a * x[j], 0) / hs[i][key] - 1) * 100).sort((a, b) => a - b);
+        const ratio = hs.map((h) => h.pz / h.pu).sort((a, b) => a - b);
+        (out[type] = out[type] || {})[fin] = { a: x[0], perUsable: x[1], perBuilt: x[2], perGarage: x[3], flatRoof: x[4], hipRoof: x[5], n: hs.length, medianErrPct: err[Math.floor(err.length / 2)], builtPerUsable: ratio[Math.floor(ratio.length / 2)] };
+      }
+    }
+    areaModelCache.set(houses, out);
+    return out;
+  }
+  /** Odhad z plochy pre štúdiu + príplatky, ktoré katalógový štandard nemá (TČ, komín). */
+  function areaEstimate(ctx, study, finish, mainEstimate) {
+    const type = study.floorsType || "bungalov";
+    const m = (areaModel(ctx.houses)[type] || {})[finish === "holodom" ? "holodom" : "standard"];
+    const pu = Number(study.usableAreaM2) || 0;
+    if (!m || !pu) return null;
+    const pzRead = Number(study.builtAreaM2) || 0, pz = pzRead || Math.round(pu * m.builtPerUsable * 10) / 10;
+    const gar = Number(study.garages) || 0, roof = study.roofType || "sedlova";
+    const s = ctx.settings || {};
+    const parts = [
+      { label: "pevná časť", value: m.a },
+      { label: `${fmtNumL(pu)} m² úžitkovej × ${Math.round(m.perUsable)} €`, value: m.perUsable * pu },
+      { label: `${fmtNumL(pz)} m² zastavanej × ${Math.round(m.perBuilt)} €${pzRead ? "" : " (zastavaná dopočítaná z úžitkovej)"}`, value: m.perBuilt * pz },
+    ];
+    if (gar) parts.push({ label: `garáž ${gar} státie`, value: m.perGarage * gar });
+    if (roof === "plocha") parts.push({ label: "plochá strecha", value: m.flatRoof });
+    if (roof === "valbova") parts.push({ label: "valbová strecha", value: m.hipRoof });
+    const base = parts.reduce((t, x) => t + x.value, 0);
+    const extras = [];
+    if (study.heatingSource === "tc") extras.push({ label: "tepelné čerpadlo", value: s.heatPumpInclVat ?? 11500 });
+    if (study.chimney) extras.push({ label: study.chimneyType === "stabil" ? "komín Schiedel Stabil" : "komín", value: study.chimneyType === "stabil" ? s.chimneyStabilInclVat ?? 9000 : s.chimneyInclVat ?? 5200 });
+    const value = Math.round((base + extras.reduce((t, x) => t + x.value, 0)) / 10) * 10;
+    return { value, base: Math.round(base), type, finish: finish === "holodom" ? "holodom" : "standard", parts: [...parts, ...extras].map((x) => ({ ...x, value: Math.round(x.value) })),
+      perUsableM2: Math.round(value / pu), perBuiltM2: Math.round(value / pz), builtM2: pz, builtEstimated: !pzRead,
+      n: m.n, medianErrPct: Math.round(m.medianErrPct * 10) / 10, diffPct: mainEstimate ? Math.round((mainEstimate / value - 1) * 1000) / 10 : null };
+  }
+  const fmtNumL = (v) => (Math.round(v * 100) / 100).toLocaleString("sk-SK");
+
   /** Výpočtový kontext z dát (rovnako ako v aplikácii): číselník, nastavenia, katalóg. */
   function calcContext({ houses, priceList, config = {} }) {
     const prices = buildPrices(priceList, config.priceOverrides || {});
@@ -1507,7 +1580,7 @@ ${opts ? "Možné úspory:\n" + opts : ""}`;
 
   window.ESL = {
     fmtNum, fmtEur, fmtSigned, fmtPct, fmtDate, parseNum, norm, uid, clone, clean,
-    KIND, ROOF, TYPE_PROJECTS, FLOORS_LABEL, ROOF_LABEL, HEAT_LABEL, DIST_LABEL, houseUrl, houseParams, effectiveBase, findClosestHouses,
+    KIND, ROOF, TYPE_PROJECTS, areaModel, areaEstimate, FLOORS_LABEL, ROOF_LABEL, HEAT_LABEL, DIST_LABEL, houseUrl, houseParams, effectiveBase, findClosestHouses,
     buildPrices, parsePriceListXlsx, diffPriceLists, mergeSettings, extrasFrom,
     ROLES, ROLE, roleItems, mapMaterial, processFile, readStudyWithAI, aiToStudy, mergePages, explainWithAI,
     layoutText, isTextPage, pagePrompt, textPrompt, OPENING_LABEL, OPENING_TYPES, FIXTURE_LABEL, FOUNDATION_LABEL, bathroomText, dtPieces, studySummary, groupNotes, initOutdoor, houseExtras,

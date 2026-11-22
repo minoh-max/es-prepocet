@@ -156,3 +156,21 @@ test("kontrola výkresov: severka, pozemok a dispozícia v situácii sa nehlási
   ], []);
   assert.deepEqual(m.unreadable.map((u) => u.text.split(" – ")[0]), ["dĺžka kanalizačnej prípojky k žumpe", "šírka okna O3"]);
 });
+
+test("odhad z plochy: vzorec z katalógu (typ domu, strecha, garáž, TČ a komín)", () => {
+  const houses = JSON.parse(fs.readFileSync(path.join(R, "client/data/houses.json"), "utf8")).houses;
+  const M = L.areaModel(houses);
+  for (const t of ["bungalov", "podkrovie", "poschodovy"]) { assert.ok(M[t].standard.n > 100, t); assert.ok(M[t].holodom.n > 100, t); }
+  assert.ok(Math.abs(M.bungalov.standard.builtPerUsable - 1.24) < 0.03);
+  assert.ok(Math.abs(M.podkrovie.standard.builtPerUsable - 0.67) < 0.03);
+  const ctx = { houses, settings: { heatPumpInclVat: 11500, chimneyInclVat: 5200 } };
+  const base = L.areaEstimate(ctx, { floorsType: "bungalov", roofType: "valbova", usableAreaM2: 100, builtAreaM2: 124 }, "standard", 210000);
+  assert.ok(base.value > 185000 && base.value < 210000, String(base.value));
+  const tc = L.areaEstimate(ctx, { floorsType: "bungalov", roofType: "valbova", usableAreaM2: 100, builtAreaM2: 124, heatingSource: "tc", chimney: true }, "standard");
+  assert.equal(Math.round((tc.value - base.value) / 10) * 10, 16700);
+  const est = L.areaEstimate(ctx, { floorsType: "bungalov", roofType: "sedlova", usableAreaM2: 100 }, "standard");
+  assert.equal(est.builtEstimated, true); assert.ok(Math.abs(est.builtM2 - 124) < 3);
+  const hol = L.areaEstimate(ctx, { floorsType: "bungalov", roofType: "valbova", usableAreaM2: 100, builtAreaM2: 124 }, "holodom");
+  assert.ok(hol.value < base.value * 0.9);
+  assert.equal(L.areaEstimate(ctx, { floorsType: "bungalov" }, "standard"), null);
+});
