@@ -83,6 +83,8 @@ test("súpis pre investora: čísla 1. strany ako v rozpočte 106/26 (zľava = C
   const d = L.contractNumbers(201079); // predvolené C1 ≈ 14,17 %
   assert.ok(Math.abs(d.c1 - 23076) < 20);
   assert.equal(L.priceLevel("ciselnik1 (23.03.2026)"), "260323");
+  assert.equal(L.priceLevel("ciselnik1 (16.11.2026) + ceny 261123 (23.11.2026)"), "261123");
+  assert.equal(L.priceLevel("ciselnik1 (16.11.2026), úprava 24.11.2026"), "261124");
 });
 
 test("typový projekt N14 – 1: skutočná geometria (valbová 40°, okná z výkazu); štúdia = projekt dá katalógovú cenu", () => {
@@ -173,4 +175,12 @@ test("odhad z plochy: vzorec z katalógu (typ domu, strecha, garáž, TČ a kom�
   const hol = L.areaEstimate(ctx, { floorsType: "bungalov", roofType: "valbova", usableAreaM2: 100, builtAreaM2: 124 }, "holodom");
   assert.ok(hol.value < base.value * 0.9);
   assert.equal(L.areaEstimate(ctx, { floorsType: "bungalov" }, "standard"), null);
+});
+
+test("číselník: nové ceny z typových prepočtov ES (cenová úroveň 261123)", () => {
+  const cis = JSON.parse(fs.readFileSync(path.join(R, "client/data/ciselnik.json"), "utf8"));
+  const P = L.buildPrices(cis, {}), u = (p) => Math.round(ctx.ESEngine.unitCost(P[p]) * 100) / 100;
+  assert.equal(u("B2/009"), 122.42); assert.equal(u("B2/008/001a"), 564.25);
+  assert.equal(u("B5/016/C"), 3547.32); assert.equal(u("B5/017"), 166.03);
+  assert.match(cis.version, /261123/);
 });
